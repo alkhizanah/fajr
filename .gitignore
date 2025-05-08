@@ -1,0 +1,6 @@
+**/target
+/kernel/kernel
+/limine
+/ovmf
+/khazraj-*.iso
+/khazraj-*.hdd
