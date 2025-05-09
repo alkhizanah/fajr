@@ -1,50 +1,44 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
-
-use limine::BaseRevision;
-use limine::request::{RequestsEndMarker, RequestsStartMarker, StackSizeRequest};
-
+#[macro_use]
+pub mod console;
+pub mod requests;
 pub mod screen;
 
-#[used]
-#[unsafe(link_section = ".requests_start_marker")]
-static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
+use core::arch::asm;
 
-#[used]
-#[unsafe(link_section = ".requests_end_marker")]
-static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
-
-#[used]
-#[unsafe(link_section = ".requests")]
-static BASE_REVISION: BaseRevision = BaseRevision::new();
+use requests::{BASE_REVISION, FRAMEBUFFER_REQUEST, STACK_SIZE_REQUEST};
 
 pub const STACK_SIZE: u64 = 0x100000;
-
-#[used]
-#[unsafe(link_section = ".requests")]
-static STACK_SIZE_REQUEST: StackSizeRequest = StackSizeRequest::new().with_size(STACK_SIZE);
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry() -> ! {
     assert!(BASE_REVISION.is_supported());
 
-    if STACK_SIZE_REQUEST.get_response().is_none() {
-        panic!("could not ask limine for bigger stack size");
-    }
+    STACK_SIZE_REQUEST
+        .get_response()
+        .expect("could not ask limine for setting stack size");
 
-    screen::init();
-
-    hlt();
+    hlt_loop();
 }
 
 #[panic_handler]
-fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
-    hlt();
+fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+    // We print panic info only if screen can be initialized, otherwise that would make a
+    // stack overflow, because if screen can not be initialized, it will panic, therefore
+    // calling the panic handler again
+    if FRAMEBUFFER_REQUEST
+        .get_response()
+        .is_some_and(|response| response.framebuffers().next().is_some())
+    {
+        println!("{}", info);
+    }
+
+    hlt_loop();
 }
 
-fn hlt() -> ! {
+fn hlt_loop() -> ! {
     unsafe {
         #[cfg(target_arch = "x86_64")]
         asm!("cli");

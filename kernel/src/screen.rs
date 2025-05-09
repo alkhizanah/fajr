@@ -1,14 +1,8 @@
-use core::mem::MaybeUninit;
+use lazy_static::lazy_static;
+use limine::framebuffer::Framebuffer;
+use spin::mutex::Mutex;
 
-use limine::{framebuffer::Framebuffer, request::FramebufferRequest};
-
-#[used]
-#[unsafe(link_section = ".requests")]
-static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
-
-static mut FRAMEBUFFER: MaybeUninit<Framebuffer> = MaybeUninit::uninit();
-
-pub static mut IS_INITIALIZED: bool = false;
+use crate::requests::FRAMEBUFFER_REQUEST;
 
 #[derive(Clone, Copy)]
 #[repr(packed)]
@@ -33,18 +27,8 @@ impl Color {
     }
 }
 
-#[inline]
-#[allow(static_mut_refs)]
-pub fn get_framebuffer() -> &'static Framebuffer<'static> {
-    if !did_init() {
-        panic!("usage of `screen::get_framebuffer` while framebuffer is not initialized");
-    }
-
-    unsafe { FRAMEBUFFER.assume_init_ref() }
-}
-
 pub fn get_colors() -> &'static mut [Color] {
-    let framebuffer = get_framebuffer();
+    let framebuffer = FRAMEBUFFER.lock();
 
     unsafe {
         core::slice::from_raw_parts_mut(
@@ -55,24 +39,16 @@ pub fn get_colors() -> &'static mut [Color] {
 }
 
 pub fn get_color(x: usize, y: usize) -> &'static mut Color {
-    &mut get_colors()[x + y * get_framebuffer().width() as usize]
+    &mut get_colors()[x + y * FRAMEBUFFER.lock().width() as usize]
 }
 
-pub fn did_init() -> bool {
-    unsafe { IS_INITIALIZED }
-}
-
-pub fn init() {
-    unsafe {
-        FRAMEBUFFER = MaybeUninit::new(
-            FRAMEBUFFER_REQUEST
-                .get_response()
-                .expect("could not ask limine to get the framebuffers")
-                .framebuffers()
-                .next()
-                .expect("no framebuffers are available"),
-        );
-
-        IS_INITIALIZED = true;
-    }
+lazy_static! {
+    pub static ref FRAMEBUFFER: Mutex<Framebuffer<'static>> = Mutex::new(
+        FRAMEBUFFER_REQUEST
+            .get_response()
+            .expect("could not ask limine to get the framebuffers")
+            .framebuffers()
+            .next()
+            .expect("no framebuffers are available")
+    );
 }
