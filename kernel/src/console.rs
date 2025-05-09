@@ -3,7 +3,7 @@ use core::fmt::{self, Write};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
-use crate::screen::{self, Color};
+use crate::screen::{self, Color, FRAMEBUFFER};
 
 #[derive(Clone, Copy)]
 pub struct Font<'a> {
@@ -36,14 +36,12 @@ impl Default for Console<'_> {
     fn default() -> Self {
         let font = Font::default();
 
-        let framebuffer = screen::FRAMEBUFFER.lock();
-
         Console {
             font,
             background: Color::BLACK,
             foreground: Color::WHITE,
-            width: framebuffer.width() as usize / font.width,
-            height: framebuffer.height() as usize / font.height,
+            width: FRAMEBUFFER.width() as usize / font.width,
+            height: FRAMEBUFFER.height() as usize / font.height,
             x: 0,
             y: 0,
         }
@@ -110,7 +108,7 @@ impl Write for Console<'_> {
 
             if self.y >= self.height {
                 let colors = screen::get_colors();
-                let row_unit = screen::FRAMEBUFFER.lock().width() as usize * self.font.height;
+                let row_unit = FRAMEBUFFER.width() as usize * self.font.height;
 
                 for current_row in (1..self.height).map(|i| i * row_unit) {
                     let previous_row = current_row - row_unit;

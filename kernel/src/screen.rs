@@ -1,6 +1,5 @@
 use lazy_static::lazy_static;
 use limine::framebuffer::Framebuffer;
-use spin::mutex::Mutex;
 
 use crate::requests::FRAMEBUFFER_REQUEST;
 
@@ -28,27 +27,23 @@ impl Color {
 }
 
 pub fn get_colors() -> &'static mut [Color] {
-    let framebuffer = FRAMEBUFFER.lock();
-
     unsafe {
         core::slice::from_raw_parts_mut(
-            framebuffer.addr().cast::<Color>(),
-            (framebuffer.width() * framebuffer.height()) as usize,
+            FRAMEBUFFER.addr().cast::<Color>(),
+            (FRAMEBUFFER.width() * FRAMEBUFFER.height()) as usize,
         )
     }
 }
 
 pub fn get_color(x: usize, y: usize) -> &'static mut Color {
-    &mut get_colors()[x + y * FRAMEBUFFER.lock().width() as usize]
+    &mut get_colors()[x + y * FRAMEBUFFER.width() as usize]
 }
 
 lazy_static! {
-    pub static ref FRAMEBUFFER: Mutex<Framebuffer<'static>> = Mutex::new(
-        FRAMEBUFFER_REQUEST
-            .get_response()
-            .expect("could not ask limine to get the framebuffers")
-            .framebuffers()
-            .next()
-            .expect("no framebuffers are available")
-    );
+    pub static ref FRAMEBUFFER: Framebuffer<'static> = FRAMEBUFFER_REQUEST
+        .get_response()
+        .expect("could not ask limine to get the framebuffers")
+        .framebuffers()
+        .next()
+        .expect("no framebuffers are available");
 }
