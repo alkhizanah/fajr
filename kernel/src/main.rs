@@ -3,14 +3,14 @@
 
 #[macro_use]
 pub mod console;
+
+pub mod arch;
+pub mod panic;
 pub mod requests;
 pub mod screen;
 
-use core::arch::asm;
-
-use requests::{BASE_REVISION, FRAMEBUFFER_REQUEST, STACK_SIZE_REQUEST};
-
-pub const STACK_SIZE: u64 = 0x100000;
+use arch::endless_loop;
+use requests::{BASE_REVISION, STACK_SIZE_REQUEST};
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry() -> ! {
@@ -20,34 +20,7 @@ unsafe extern "C" fn entry() -> ! {
         .get_response()
         .expect("could not ask limine for setting stack size");
 
-    hlt_loop();
-}
+    arch::init();
 
-#[panic_handler]
-fn panic_handler(info: &core::panic::PanicInfo) -> ! {
-    // We print panic info only if screen can be initialized, otherwise that would make a
-    // stack overflow, because if screen can not be initialized, it will panic, therefore
-    // calling the panic handler again
-    if FRAMEBUFFER_REQUEST
-        .get_response()
-        .is_some_and(|response| response.framebuffers().next().is_some())
-    {
-        println!("{}", info);
-    }
-
-    hlt_loop();
-}
-
-fn hlt_loop() -> ! {
-    unsafe {
-        #[cfg(target_arch = "x86_64")]
-        asm!("cli");
-    }
-
-    loop {
-        unsafe {
-            #[cfg(target_arch = "x86_64")]
-            asm!("hlt");
-        }
-    }
+    endless_loop();
 }
