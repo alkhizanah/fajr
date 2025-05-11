@@ -3,20 +3,15 @@ use core::arch::asm;
 use bitflags::bitflags;
 use lazy_static::lazy_static;
 
+use super::DescriptorTableRegister;
+
 #[derive(Debug, PartialEq)]
-struct Gdt<const MAX: usize = 8> {
+struct GlobalDescriptorTable<const MAX: usize = 8> {
     table: [u64; MAX],
     len: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(C, packed(2))]
-struct GdtRegister {
-    size: u16,
-    address: u64,
-}
-
-impl<const MAX: usize> Gdt<MAX> {
+impl<const MAX: usize> GlobalDescriptorTable<MAX> {
     pub const fn empty() -> Self {
         Self {
             table: [0; MAX],
@@ -24,14 +19,14 @@ impl<const MAX: usize> Gdt<MAX> {
         }
     }
 
-    pub fn push(&mut self, entry: GdtEntry) {
+    pub fn push(&mut self, entry: Entry) {
         debug_assert_ne!(self.len, MAX);
         self.table[self.len] = entry.0;
         self.len += 1;
     }
 
-    pub fn register(&'static self) -> GdtRegister {
-        GdtRegister {
+    pub fn register(&'static self) -> DescriptorTableRegister {
+        DescriptorTableRegister {
             address: self.table.as_ptr() as u64,
             size: (self.len * size_of::<u64>() - 1) as u16,
         }
@@ -39,12 +34,12 @@ impl<const MAX: usize> Gdt<MAX> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct GdtEntry(u64);
+struct Entry(u64);
 
 bitflags! {
     /// Flags for a GDT descriptor. Not all flags are valid for all descriptor types.
     #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
-    pub struct GdtEntryFlags: u64 {
+    pub struct EntryFlags: u64 {
         /// Set by the processor if this segment has been accessed. Only cleared by software.
         /// _Setting_ this bit in software prevents GDT writes on first use.
         const ACCESSED          = 1 << 40;
@@ -85,7 +80,7 @@ bitflags! {
     }
 }
 
-impl GdtEntryFlags {
+impl EntryFlags {
     const COMMON: Self = Self::from_bits_truncate(
         Self::USER_SEGMENT.bits()
             | Self::PRESENT.bits()
@@ -103,30 +98,30 @@ impl GdtEntryFlags {
     );
 
     const KERNEL_DATA: Self =
-        Self::from_bits_truncate(Self::COMMON.bits() | GdtEntryFlags::DEFAULT_SIZE.bits());
+        Self::from_bits_truncate(Self::COMMON.bits() | EntryFlags::DEFAULT_SIZE.bits());
 
     const USER_CODE: Self =
-        Self::from_bits_truncate(Self::KERNEL_CODE.bits() | GdtEntryFlags::DPL_RING_3.bits());
+        Self::from_bits_truncate(Self::KERNEL_CODE.bits() | EntryFlags::DPL_RING_3.bits());
 
     const USER_DATA: Self =
-        Self::from_bits_truncate(Self::KERNEL_DATA.bits() | GdtEntryFlags::DPL_RING_3.bits());
+        Self::from_bits_truncate(Self::KERNEL_DATA.bits() | EntryFlags::DPL_RING_3.bits());
 }
 
-impl GdtEntry {
-    const KERNEL_CODE_SEGMENT: GdtEntry = GdtEntry(GdtEntryFlags::KERNEL_CODE.bits());
-    const KERNEL_DATA_SEGMENT: GdtEntry = GdtEntry(GdtEntryFlags::KERNEL_DATA.bits());
-    const USER_CODE_SEGMENT: GdtEntry = GdtEntry(GdtEntryFlags::USER_CODE.bits());
-    const USER_DATA_SEGMENT: GdtEntry = GdtEntry(GdtEntryFlags::USER_DATA.bits());
+impl Entry {
+    const KERNEL_CODE_SEGMENT: Entry = Entry(EntryFlags::KERNEL_CODE.bits());
+    const KERNEL_DATA_SEGMENT: Entry = Entry(EntryFlags::KERNEL_DATA.bits());
+    const USER_CODE_SEGMENT: Entry = Entry(EntryFlags::USER_CODE.bits());
+    const USER_DATA_SEGMENT: Entry = Entry(EntryFlags::USER_DATA.bits());
 }
 
 lazy_static! {
-    static ref GDT: Gdt = {
-        let mut gdt = Gdt::empty();
+    static ref GDT: GlobalDescriptorTable = {
+        let mut gdt = GlobalDescriptorTable::empty();
 
-        gdt.push(GdtEntry::KERNEL_CODE_SEGMENT); // 0x08
-        gdt.push(GdtEntry::KERNEL_DATA_SEGMENT); // 0x10
-        gdt.push(GdtEntry::USER_CODE_SEGMENT); // 0x18
-        gdt.push(GdtEntry::USER_DATA_SEGMENT); // 0x20
+        gdt.push(Entry::KERNEL_CODE_SEGMENT); // 0x08
+        gdt.push(Entry::KERNEL_DATA_SEGMENT); // 0x10
+        gdt.push(Entry::USER_CODE_SEGMENT); // 0x18
+        gdt.push(Entry::USER_DATA_SEGMENT); // 0x20
 
         gdt
     };
