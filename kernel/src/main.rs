@@ -14,7 +14,7 @@ use arch::{endless_loop, interrupts};
 use requests::BASE_REVISION;
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn entry() -> ! {
+extern "C" fn entry() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     interrupts::disable();
