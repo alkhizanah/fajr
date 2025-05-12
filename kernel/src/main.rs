@@ -1,5 +1,4 @@
 #![feature(abi_x86_interrupt)]
-
 #![no_std]
 #![no_main]
 
@@ -12,15 +11,11 @@ pub mod requests;
 pub mod screen;
 
 use arch::{endless_loop, interrupts};
-use requests::{BASE_REVISION, STACK_SIZE_REQUEST};
+use requests::BASE_REVISION;
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry() -> ! {
     assert!(BASE_REVISION.is_supported());
-
-    STACK_SIZE_REQUEST
-        .get_response()
-        .expect("could not ask limine for setting stack size");
 
     interrupts::disable();
 
