@@ -112,6 +112,14 @@ ifeq ($(KARCH),x86_64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTIA32.EFI ::/EFI/BOOT
 endif
 
+.PHONY: clippy
+clippy:
+	$(MAKE) -C kernel clippy
+
+.PHONY: fmt
+fmt:
+	$(MAKE) -C kernel fmt
+
 .PHONY: clean
 clean:
 	$(MAKE) -C kernel clean

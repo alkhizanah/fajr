@@ -101,28 +101,32 @@ lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::empty();
 
-        idt.table[0].set_handler_address(handle_division_error as u64);
-        idt.table[1].set_handler_address(handle_debug as u64);
-        idt.table[3].set_handler_address(handle_breakpoint as u64);
-        idt.table[4].set_handler_address(handle_overflow as u64);
-        idt.table[5].set_handler_address(handle_bound_range_exceeded as u64);
-        idt.table[6].set_handler_address(handle_invalid_opcode as u64);
-        idt.table[7].set_handler_address(handle_device_not_available as u64);
-        idt.table[8].set_handler_address(handle_double_fault as u64).set_stack_index(0);
-        idt.table[10].set_handler_address(handle_segmentation_fault as u64);
-        idt.table[11].set_handler_address(handle_segmentation_fault as u64);
-        idt.table[12].set_handler_address(handle_segmentation_fault as u64);
-        idt.table[13].set_handler_address(handle_general_protection_fault as u64);
-        idt.table[14].set_handler_address(handle_page_fault as u64);
-        idt.table[16].set_handler_address(handle_x87_floating_point_exception as u64);
-        idt.table[17].set_handler_address(handle_alignment_check as u64);
-        idt.table[18].set_handler_address(handle_machine_check as u64);
-        idt.table[19].set_handler_address(handle_simd_floating_point_exception as u64);
-        idt.table[20].set_handler_address(handle_virtualization_exception as u64);
-        idt.table[21].set_handler_address(handle_control_protection_exception as u64);
-        idt.table[28].set_handler_address(handle_hypervisor_injection_exception as u64);
-        idt.table[29].set_handler_address(handle_vmm_communication_exception as u64);
-        idt.table[30].set_handler_address(handle_security_exception as u64);
+        idt.table[0].set_handler_address(handle_division_error as usize as u64);
+        idt.table[1].set_handler_address(handle_debug as usize as u64);
+        idt.table[3].set_handler_address(handle_breakpoint as usize as u64);
+        idt.table[4].set_handler_address(handle_overflow as usize as u64);
+        idt.table[5].set_handler_address(handle_bound_range_exceeded as usize as u64);
+        idt.table[6].set_handler_address(handle_invalid_opcode as usize as u64);
+        idt.table[7].set_handler_address(handle_device_not_available as usize as u64);
+
+        idt.table[8]
+            .set_handler_address(handle_double_fault as usize as u64)
+            .set_stack_index(0);
+
+        idt.table[10].set_handler_address(handle_segmentation_fault as usize as u64);
+        idt.table[11].set_handler_address(handle_segmentation_fault as usize as u64);
+        idt.table[12].set_handler_address(handle_segmentation_fault as usize as u64);
+        idt.table[13].set_handler_address(handle_general_protection_fault as usize as u64);
+        idt.table[14].set_handler_address(handle_page_fault as usize as u64);
+        idt.table[16].set_handler_address(handle_x87_floating_point_exception as usize as u64);
+        idt.table[17].set_handler_address(handle_alignment_check as usize as u64);
+        idt.table[18].set_handler_address(handle_machine_check as usize as u64);
+        idt.table[19].set_handler_address(handle_simd_floating_point_exception as usize as u64);
+        idt.table[20].set_handler_address(handle_virtualization_exception as usize as u64);
+        idt.table[21].set_handler_address(handle_control_protection_exception as usize as u64);
+        idt.table[28].set_handler_address(handle_hypervisor_injection_exception as usize as u64);
+        idt.table[29].set_handler_address(handle_vmm_communication_exception as usize as u64);
+        idt.table[30].set_handler_address(handle_security_exception as usize as u64);
 
         idt
     };

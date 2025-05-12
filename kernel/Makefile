@@ -31,6 +31,14 @@ all:
 	RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE)
 	cp target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/$$(cd target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR) && find -maxdepth 1 -perm -111 -type f) kernel
 
+.PHONY: clippy
+clippy:
+	RUSTFLAGS="-C relocation-model=static" cargo clippy --target $(RUST_TARGET) --profile $(RUST_PROFILE)
+
+.PHONY: fmt
+fmt:
+	cargo fmt --all
+
 # Remove object files and the final executable.
 .PHONY: clean
 clean:

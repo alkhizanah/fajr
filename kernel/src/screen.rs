@@ -4,7 +4,7 @@ use limine::framebuffer::Framebuffer;
 use crate::requests::FRAMEBUFFER_REQUEST;
 
 #[derive(Clone, Copy)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct Color {
     pub b: u8,
     pub g: u8,
