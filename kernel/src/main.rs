@@ -11,7 +11,7 @@ pub mod panic;
 pub mod requests;
 pub mod screen;
 
-use arch::endless_loop;
+use arch::{endless_loop, interrupts};
 use requests::{BASE_REVISION, STACK_SIZE_REQUEST};
 
 #[unsafe(no_mangle)]
@@ -21,6 +21,8 @@ unsafe extern "C" fn entry() -> ! {
     STACK_SIZE_REQUEST
         .get_response()
         .expect("could not ask limine for setting stack size");
+
+    interrupts::disable();
 
     arch::init();
 

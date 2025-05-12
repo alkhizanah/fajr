@@ -76,8 +76,13 @@ impl EntryOptions {
         self
     }
 
-    pub fn set_code_selector(&mut self, cs: u16) -> &mut Self {
+    pub const fn set_code_selector(&mut self, cs: u16) -> &mut Self {
         self.cs = cs;
+        self
+    }
+
+    pub fn set_stack_index(&mut self, index: u16) -> &mut Self {
+        self.bits.set_bits(0..3, index + 1);
         self
     }
 }
@@ -103,7 +108,7 @@ lazy_static! {
         idt.table[5].set_handler_address(handle_bound_range_exceeded as u64);
         idt.table[6].set_handler_address(handle_invalid_opcode as u64);
         idt.table[7].set_handler_address(handle_device_not_available as u64);
-        idt.table[8].set_handler_address(handle_double_fault as u64);
+        idt.table[8].set_handler_address(handle_double_fault as u64).set_stack_index(0);
         idt.table[10].set_handler_address(handle_segmentation_fault as u64);
         idt.table[11].set_handler_address(handle_segmentation_fault as u64);
         idt.table[12].set_handler_address(handle_segmentation_fault as u64);
@@ -112,7 +117,7 @@ lazy_static! {
         idt.table[16].set_handler_address(handle_x87_floating_point_exception as u64);
         idt.table[17].set_handler_address(handle_alignment_check as u64);
         idt.table[18].set_handler_address(handle_machine_check as u64);
-        idt.table[19].set_handler_address(handle_x87_floating_point_exception as u64);
+        idt.table[19].set_handler_address(handle_simd_floating_point_exception as u64);
         idt.table[20].set_handler_address(handle_virtualization_exception as u64);
         idt.table[21].set_handler_address(handle_control_protection_exception as u64);
         idt.table[28].set_handler_address(handle_hypervisor_injection_exception as u64);

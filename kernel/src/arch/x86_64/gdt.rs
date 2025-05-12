@@ -1,45 +1,63 @@
 use core::arch::asm;
 
+use bit_field::BitField;
 use bitflags::bitflags;
 use lazy_static::lazy_static;
 
-use super::DescriptorTableRegister;
+use super::{DescriptorTableRegister, tss::TaskStateSegment};
 
 #[derive(Debug, PartialEq)]
 struct GlobalDescriptorTable<const MAX: usize = 8> {
-    table: [u64; MAX],
+    table: [Entry; MAX],
     len: usize,
 }
 
 impl<const MAX: usize> GlobalDescriptorTable<MAX> {
     pub const fn empty() -> Self {
         Self {
-            table: [0; MAX],
+            table: [Entry(0); MAX],
             len: 1,
         }
     }
 
-    pub fn push(&mut self, entry: Entry) {
-        debug_assert_ne!(self.len, MAX);
-        self.table[self.len] = entry.0;
-        self.len += 1;
+    pub const fn push(&mut self, descriptor: Descriptor) {
+        match descriptor {
+            Descriptor::UserSegment(value) => {
+                self.table[self.len] = Entry(value);
+                self.len += 1;
+            }
+
+            Descriptor::SystemSegment(value_low, value_high) => {
+                self.table[self.len] = Entry(value_low);
+                self.len += 1;
+                self.table[self.len] = Entry(value_high);
+                self.len += 1;
+            }
+        }
     }
 
     pub fn register(&'static self) -> DescriptorTableRegister {
         DescriptorTableRegister {
             address: self.table.as_ptr() as u64,
-            size: (self.len * size_of::<u64>() - 1) as u16,
+            size: (self.len * size_of::<Entry>() - 1) as u16,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
 struct Entry(u64);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Descriptor {
+    UserSegment(u64),
+    SystemSegment(u64, u64),
+}
 
 bitflags! {
     /// Flags for a GDT descriptor. Not all flags are valid for all descriptor types.
     #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
-    pub struct EntryFlags: u64 {
+    pub struct DescriptorFlags: u64 {
         /// Set by the processor if this segment has been accessed. Only cleared by software.
         /// _Setting_ this bit in software prevents GDT writes on first use.
         const ACCESSED          = 1 << 40;
@@ -80,7 +98,7 @@ bitflags! {
     }
 }
 
-impl EntryFlags {
+impl DescriptorFlags {
     const COMMON: Self = Self::from_bits_truncate(
         Self::USER_SEGMENT.bits()
             | Self::PRESENT.bits()
@@ -98,30 +116,81 @@ impl EntryFlags {
     );
 
     const KERNEL_DATA: Self =
-        Self::from_bits_truncate(Self::COMMON.bits() | EntryFlags::DEFAULT_SIZE.bits());
+        Self::from_bits_truncate(Self::COMMON.bits() | Self::DEFAULT_SIZE.bits());
 
     const USER_CODE: Self =
-        Self::from_bits_truncate(Self::KERNEL_CODE.bits() | EntryFlags::DPL_RING_3.bits());
+        Self::from_bits_truncate(Self::KERNEL_CODE.bits() | Self::DPL_RING_3.bits());
 
     const USER_DATA: Self =
-        Self::from_bits_truncate(Self::KERNEL_DATA.bits() | EntryFlags::DPL_RING_3.bits());
+        Self::from_bits_truncate(Self::KERNEL_DATA.bits() | Self::DPL_RING_3.bits());
 }
 
-impl Entry {
-    const KERNEL_CODE_SEGMENT: Entry = Entry(EntryFlags::KERNEL_CODE.bits());
-    const KERNEL_DATA_SEGMENT: Entry = Entry(EntryFlags::KERNEL_DATA.bits());
-    const USER_CODE_SEGMENT: Entry = Entry(EntryFlags::USER_CODE.bits());
-    const USER_DATA_SEGMENT: Entry = Entry(EntryFlags::USER_DATA.bits());
+impl Descriptor {
+    #[inline]
+    pub const fn kernel_code_segment() -> Descriptor {
+        Descriptor::UserSegment(DescriptorFlags::KERNEL_CODE.bits())
+    }
+
+    #[inline]
+    pub const fn kernel_data_segment() -> Descriptor {
+        Descriptor::UserSegment(DescriptorFlags::KERNEL_DATA.bits())
+    }
+
+    #[inline]
+    pub const fn user_code_segment() -> Descriptor {
+        Descriptor::UserSegment(DescriptorFlags::USER_CODE.bits())
+    }
+
+    #[inline]
+    pub const fn user_data_segment() -> Descriptor {
+        Descriptor::UserSegment(DescriptorFlags::USER_DATA.bits())
+    }
+
+    #[inline]
+    pub fn task_state_segment(tss: &'static TaskStateSegment) -> Descriptor {
+        let ptr = tss as *const _ as u64;
+
+        let mut low = DescriptorFlags::PRESENT.bits();
+        let mut high = 0;
+
+        // address
+        low.set_bits(16..40, ptr.get_bits(0..24));
+        low.set_bits(56..64, ptr.get_bits(24..32));
+        high.set_bits(0..32, ptr.get_bits(32..64));
+
+        // size
+        low.set_bits(0..16, (size_of::<TaskStateSegment>() - 1) as u64);
+
+        // type (0b1001 means 64-bit available tss)
+        low.set_bits(40..44, 0b1001);
+
+        Descriptor::SystemSegment(low, high)
+    }
+}
+
+lazy_static! {
+    static ref TSS: TaskStateSegment = {
+        let mut tss = TaskStateSegment::new();
+
+        tss.interrupt_stack_table[0] = {
+            const IST_STACK_SIZE: usize = 20 * 1024;
+            static mut IST_STACK: [u8; IST_STACK_SIZE] = [0; IST_STACK_SIZE];
+            ((&raw const IST_STACK).addr() + IST_STACK_SIZE) as u64
+        };
+
+        tss
+    };
 }
 
 lazy_static! {
     static ref GDT: GlobalDescriptorTable = {
         let mut gdt = GlobalDescriptorTable::empty();
 
-        gdt.push(Entry::KERNEL_CODE_SEGMENT); // 0x08
-        gdt.push(Entry::KERNEL_DATA_SEGMENT); // 0x10
-        gdt.push(Entry::USER_CODE_SEGMENT); // 0x18
-        gdt.push(Entry::USER_DATA_SEGMENT); // 0x20
+        gdt.push(Descriptor::kernel_code_segment()); // 0x08
+        gdt.push(Descriptor::kernel_data_segment()); // 0x10
+        gdt.push(Descriptor::user_code_segment()); // 0x18
+        gdt.push(Descriptor::user_data_segment()); // 0x20
+        gdt.push(Descriptor::task_state_segment(&TSS)); // 0x28
 
         gdt
     };
@@ -150,5 +219,7 @@ pub fn init() {
             },
             options(preserves_flags)
         );
+
+        asm!("ltr {0:x}", in(reg) 0x28, options(readonly, nostack, preserves_flags));
     }
 }

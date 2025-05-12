@@ -1,6 +1,7 @@
 pub mod gdt;
 pub mod idt;
 pub mod interrupts;
+pub mod tss;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed(2))]
@@ -10,7 +11,6 @@ struct DescriptorTableRegister {
 }
 
 pub fn init() {
-    interrupts::disable();
     gdt::init();
     idt::init();
 }
