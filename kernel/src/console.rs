@@ -23,13 +23,15 @@ impl Default for Font<'_> {
 }
 
 pub struct Console<'a> {
-    font: Font<'a>,
-    background: Color,
-    foreground: Color,
-    width: usize,
-    height: usize,
-    x: usize,
-    y: usize,
+    pub font: Font<'a>,
+    pub background: Color,
+    pub foreground: Color,
+    pub width: usize,
+    pub height: usize,
+    pub x: usize,
+    pub y: usize,
+    pub padding_x: usize,
+    pub padding_y: usize,
 }
 
 impl Default for Console<'_> {
@@ -44,11 +46,21 @@ impl Default for Console<'_> {
             height: FRAMEBUFFER.height() as usize / font.height,
             x: 0,
             y: 0,
+            padding_x: 2,
+            padding_y: 1,
         }
     }
 }
 
 impl Console<'_> {
+    fn get_padded_x(&self) -> usize {
+        self.x + self.padding_x
+    }
+
+    fn get_padded_y(&self) -> usize {
+        self.y + self.padding_y
+    }
+
     pub fn clear(&mut self) {
         screen::get_colors().fill(self.background);
 
@@ -57,8 +69,8 @@ impl Console<'_> {
     }
 
     fn write_font_bytes(&self, font_bytes: &[u8]) {
-        let x = self.x * self.font.width;
-        let y = self.y * self.font.height;
+        let x = self.get_padded_x() * self.font.width;
+        let y = self.get_padded_y() * self.font.height;
 
         for dx in 0..self.font.width {
             for dy in 0..self.font.height {
@@ -102,7 +114,7 @@ impl Write for Console<'_> {
             );
         }
 
-        if self.x + 1 >= self.width || ch == '\n' {
+        if self.get_padded_x() + 1 >= self.width || ch == '\n' {
             self.x = 0;
             self.y += 1;
 
