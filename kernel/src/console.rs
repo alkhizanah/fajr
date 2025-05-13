@@ -3,27 +3,13 @@ use core::fmt::{self, Write};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
-use crate::screen::{self, Color, FRAMEBUFFER};
-
-#[derive(Clone, Copy)]
-pub struct Font<'a> {
-    data: &'a [u8],
-    width: usize,
-    height: usize,
-}
-
-impl Default for Font<'_> {
-    fn default() -> Self {
-        Font {
-            data: include_bytes!("fonts/default8x16.bitmap"),
-            width: 8,
-            height: 16,
-        }
-    }
-}
+use crate::{
+    psf2::Psf2Font,
+    screen::{self, Color, FRAMEBUFFER},
+};
 
 pub struct Console<'a> {
-    pub font: Font<'a>,
+    pub font: Psf2Font<'a>,
     pub background: Color,
     pub foreground: Color,
     pub width: usize,
@@ -36,14 +22,14 @@ pub struct Console<'a> {
 
 impl Default for Console<'_> {
     fn default() -> Self {
-        let font = Font::default();
+        let font = Psf2Font::parse(include_bytes!("fonts/default8x16.psfu"));
 
         Console {
             font,
             background: Color::BLACK,
             foreground: Color::WHITE,
-            width: FRAMEBUFFER.width() as usize / font.width,
-            height: FRAMEBUFFER.height() as usize / font.height,
+            width: FRAMEBUFFER.width() as usize / font.header.glyph_width as usize,
+            height: FRAMEBUFFER.height() as usize / font.header.glyph_height as usize,
             x: 0,
             y: 0,
             padding_x: 2,
@@ -68,13 +54,17 @@ impl Console<'_> {
         self.y = 0;
     }
 
-    fn write_font_bytes(&self, font_bytes: &[u8]) {
-        let x = self.get_padded_x() * self.font.width;
-        let y = self.get_padded_y() * self.font.height;
+    fn write_glyph(&self, glyph_bytes: &[u8]) {
+        let x = self.get_padded_x() * self.font.header.glyph_width as usize;
+        let y = self.get_padded_y() * self.font.header.glyph_height as usize;
 
-        for dx in 0..self.font.width {
-            for dy in 0..self.font.height {
-                let font_bit = self.get_font_bit(font_bytes, self.font.width - 1 - dx, dy);
+        for dx in 0..self.font.header.glyph_width as usize {
+            for dy in 0..self.font.header.glyph_height as usize {
+                let font_bit = self.get_glyph_bit(
+                    glyph_bytes,
+                    self.font.header.glyph_width as usize - 1 - dx,
+                    dy,
+                );
 
                 if font_bit {
                     *screen::get_color(x + dx, y + dy) = self.foreground;
@@ -85,12 +75,12 @@ impl Console<'_> {
         }
     }
 
-    fn get_font_bytes(&self, location: usize) -> &[u8] {
-        &self.font.data[location..location + self.font.height]
+    fn get_glyph_bytes(&self, index: usize) -> &[u8] {
+        &self.font.data[index..index + self.font.header.glyph_height as usize]
     }
 
-    fn get_font_bit(&self, font_bytes: &[u8], x: usize, y: usize) -> bool {
-        (font_bytes[y] & (1 << x)) != 0
+    fn get_glyph_bit(&self, glyph_bytes: &[u8], x: usize, y: usize) -> bool {
+        (glyph_bytes[y] & (1 << x)) != 0
     }
 }
 
@@ -105,11 +95,12 @@ impl Write for Console<'_> {
 
     fn write_char(&mut self, ch: char) -> fmt::Result {
         if !ch.is_ascii() {
-            self.write_font_bytes(self.get_font_bytes(self.font.data.len() - 2 * 16));
+            self.write_glyph(self.get_glyph_bytes(0));
         } else if ch != '\n' {
-            self.write_font_bytes(
-                self.get_font_bytes(
-                    (ch as usize * self.font.height).rem_euclid(self.font.data.len()),
+            self.write_glyph(
+                self.get_glyph_bytes(
+                    (ch as usize * self.font.header.glyph_height as usize)
+                        .rem_euclid(self.font.data.len()),
                 ),
             );
         }
@@ -120,7 +111,8 @@ impl Write for Console<'_> {
 
             if self.y >= self.height {
                 let colors = screen::get_colors();
-                let row_unit = FRAMEBUFFER.width() as usize * self.font.height;
+                let row_unit =
+                    FRAMEBUFFER.width() as usize * self.font.header.glyph_height as usize;
 
                 for current_row in (1..self.height).map(|i| i * row_unit) {
                     let previous_row = current_row - row_unit;

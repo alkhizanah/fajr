@@ -11,6 +11,7 @@ pub mod arch;
 pub mod memory;
 pub mod paging;
 pub mod panic;
+pub mod psf2;
 pub mod requests;
 pub mod screen;
 
