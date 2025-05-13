@@ -1,5 +1,7 @@
 use limine::BaseRevision;
-use limine::request::{FramebufferRequest, MemoryMapRequest, HhdmRequest, RequestsEndMarker, RequestsStartMarker};
+use limine::request::{
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker,
+};
 
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]

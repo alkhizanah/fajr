@@ -14,18 +14,17 @@ pub mod panic;
 pub mod requests;
 pub mod screen;
 
-use arch::{endless_loop, interrupts};
-use requests::BASE_REVISION;
-
 #[unsafe(no_mangle)]
 extern "C" fn entry() -> ! {
-    assert!(BASE_REVISION.is_supported());
+    if !requests::BASE_REVISION.is_supported() {
+        panic!("limine bootloader does not support our requested base revision");
+    }
 
-    interrupts::disable();
+    arch::interrupts::disable();
 
     arch::init();
 
     memory::init();
 
-    endless_loop();
+    arch::endless_loop();
 }
