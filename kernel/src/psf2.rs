@@ -12,9 +12,9 @@ pub struct Psf2Header {
     pub glyphs_count: u32,
     /// Size in bytes of each glyph
     pub glyph_size: u32,
-    /// The height of each glyph
-    pub glyph_width: u32,
     /// The width of each glyph
+    pub glyph_width: u32,
+    /// The height of each glyph
     pub glyph_height: u32,
 }
 
