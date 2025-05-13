@@ -1,2 +1,5 @@
 [build]
 target-dir = "target"
+
+[unstable]
+build-std = ["alloc", "core", "compiler_builtins"]

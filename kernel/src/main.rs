@@ -2,10 +2,14 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 #[macro_use]
 pub mod console;
 
 pub mod arch;
+pub mod memory;
+pub mod paging;
 pub mod panic;
 pub mod requests;
 pub mod screen;
@@ -20,6 +24,8 @@ extern "C" fn entry() -> ! {
     interrupts::disable();
 
     arch::init();
+
+    memory::init();
 
     endless_loop();
 }

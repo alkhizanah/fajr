@@ -3,6 +3,15 @@ use limine::framebuffer::Framebuffer;
 
 use crate::requests::FRAMEBUFFER_REQUEST;
 
+lazy_static! {
+    pub static ref FRAMEBUFFER: Framebuffer<'static> = FRAMEBUFFER_REQUEST
+        .get_response()
+        .expect("could not ask limine to get the framebuffers")
+        .framebuffers()
+        .next()
+        .expect("no framebuffers are available");
+}
+
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
 pub struct Color {
@@ -37,13 +46,4 @@ pub fn get_colors() -> &'static mut [Color] {
 
 pub fn get_color(x: usize, y: usize) -> &'static mut Color {
     &mut get_colors()[x + y * FRAMEBUFFER.width() as usize]
-}
-
-lazy_static! {
-    pub static ref FRAMEBUFFER: Framebuffer<'static> = FRAMEBUFFER_REQUEST
-        .get_response()
-        .expect("could not ask limine to get the framebuffers")
-        .framebuffers()
-        .next()
-        .expect("no framebuffers are available");
 }
