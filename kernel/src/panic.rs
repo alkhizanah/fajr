@@ -36,7 +36,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
 
         let _ = writeln!(
             &mut console,
-            "You can get help by going to the GitHub repository of the kernel, located at github.com/alkhizanah/khazraj",
+            "You can get help by going to the GitHub repository of the kernel, located at github.com/alkhizanah/fajr",
         );
 
         let _ = writeln!(&mut console, "Panic message: {}", info.message());

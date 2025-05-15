@@ -1,5 +1,5 @@
 [package]
-name = "khazraj_kernel"
+name = "fajr_kernel"
 version = "0.1.0"
 edition = "2024"
 
@@ -12,7 +12,7 @@ linked_list_allocator = "0.10.5"
 spin = "0.10.0"
 
 [[bin]]
-name = "khazraj_kernel"
+name = "fajr_kernel"
 path = "src/main.rs"
 test = false
 doctest = false
