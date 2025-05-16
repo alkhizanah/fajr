@@ -6,15 +6,15 @@
     <h4 align="center"> A modern and elegant operating system for programmers </h4>
 </p>
 
-### Makefile targets:
+### Building from source
 
-- Running `make all` will compile the kernel (from the `kernel/` directory) and then generate a bootable ISO image.
+- Running `cargo run` will build the kernel and a bootable ISO and then run it using `qemu` (if installed).
 
-- Running `make all-hdd` will compile the kernel and then generate a raw image suitable to be flashed onto a USB stick or hard drive/SSD.
+- Running `cargo run -- with hdd` will build the kernel and a raw HDD image and then run it using `qemu` (if installed).
 
-- Running `make run` will build the kernel and a bootable ISO (equivalent to make all) and then run it using `qemu` (if installed).
+- Running `cargo run -- only build` will only build the kernel and a bootable ISO.
 
-- Running `make run-hdd` will build the kernel and a raw HDD image (equivalent to make all-hdd) and then run it using `qemu` (if installed).
+- Running `cargo run -- only build with hdd` will only build the kernel and a raw HDD image.
 
->[!NOTE]
->The `run-uefi` and `run-hdd-uefi` targets are equivalent to their non `-uefi` counterparts except that they boot `qemu` using a UEFI-compatible firmware.
+> [!NOTE]
+> Adding `with uefi` to each command will build with a UEFI-compatible firmware.
