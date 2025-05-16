@@ -9,7 +9,7 @@ pub struct Psf2Header {
     /// Flags of the font
     pub flags: u32,
     /// Amount of glyphs
-    pub glyphs_count: u32,
+    pub glyph_count: u32,
     /// Size in bytes of each glyph
     pub glyph_size: u32,
     /// The width of each glyph
@@ -36,7 +36,7 @@ impl Psf2Font<'_> {
             version: u32::from_le_bytes(get_4_bytes(&data[4..])),
             header_size: u32::from_le_bytes(get_4_bytes(&data[8..])),
             flags: u32::from_le_bytes(get_4_bytes(&data[12..])),
-            glyphs_count: u32::from_le_bytes(get_4_bytes(&data[16..])),
+            glyph_count: u32::from_le_bytes(get_4_bytes(&data[16..])),
             glyph_size: u32::from_le_bytes(get_4_bytes(&data[20..])),
             glyph_height: u32::from_le_bytes(get_4_bytes(&data[24..])),
             glyph_width: u32::from_le_bytes(get_4_bytes(&data[28..])),
