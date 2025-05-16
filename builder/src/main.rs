@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsStr,
     fs,
     process::{Command, exit},
 };
@@ -15,6 +16,43 @@ impl Arch {
     }
 }
 
+fn exec<C>(command: C)
+where
+    C: AsRef<str>,
+{
+    let mut command = command.as_ref().split_whitespace();
+
+    let program = command.next().unwrap();
+
+    Command::new(program)
+        .args(command)
+        .spawn()
+        .unwrap()
+        .wait()
+        .unwrap();
+}
+
+fn exece<C, E, K, V>(command: C, env: E)
+where
+    C: ToString,
+    E: Iterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
+    let command = command.to_string();
+    let mut command = command.split_whitespace();
+
+    let program = command.next().unwrap();
+
+    Command::new(program)
+        .args(command)
+        .envs(env)
+        .spawn()
+        .unwrap()
+        .wait()
+        .unwrap();
+}
+
 pub fn main() {
     let mut args = std::env::args();
 
@@ -29,7 +67,7 @@ pub fn main() {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "only" => {
-                if !args.next().is_some_and(|x| x.as_str() == "build") {
+                if args.next().is_none_or(|x| x.as_str() != "build") {
                     eprintln!("expected 'build' after 'only'");
                     exit(1);
                 }
@@ -85,24 +123,11 @@ pub fn main() {
     }
 
     if !fs::exists("limine").is_ok_and(|exists| exists) {
-        Command::new("git")
-            .args([
-                "clone",
-                "https://github.com/limine-bootloader/limine.git",
-                "--branch=v9.x-binary",
-                "--depth=1",
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
+        exec(
+            "git clone https://github.com/limine-bootloader/limine.git --branch=v9.x-binary --depth=1",
+        );
 
-        Command::new("make")
-            .args(["-C", "limine"])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
+        exec("make -C limine");
     }
 
     let ovmf_code = "ovmf-code-".to_string() + arch.as_str() + ".fd";
@@ -111,33 +136,13 @@ pub fn main() {
     if !bios && !fs::exists("ovmf").is_ok_and(|exists| exists) {
         fs::create_dir_all("ovmf").unwrap();
 
-        Command::new("curl")
-            .args([
-                "-Lo",
-                ovmf_code.as_str(),
-                ("https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/"
-                    .to_string()
-                    + ovmf_code.as_str())
-                .as_str(),
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
+        exec(format!(
+            "curl -Lo {ovmf_code} https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/{ovmf_code}"
+        ));
 
-        Command::new("curl")
-            .args([
-                "-Lo",
-                ovmf_vars.as_str(),
-                ("https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/"
-                    .to_string()
-                    + ovmf_vars.as_str())
-                .as_str(),
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
+        exec(format!(
+            "curl -Lo {ovmf_vars} https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/{ovmf_vars}"
+        ));
     }
 
     let rust_target = arch.as_str().to_string() + "-unknown-none";
@@ -154,29 +159,13 @@ pub fn main() {
 
     let image_path = "fajr-".to_string() + arch.as_str() + if iso { ".iso" } else { ".hdd" };
 
-    Command::new("cargo")
-        .args([
-            "build",
-            "-p",
-            "fajr_kernel",
-            "--target",
-            rust_target.as_str(),
-            "--profile",
-            rust_profile.as_str(),
-        ])
-        .env("RUSTFLAGS", "-C relocation-model=static")
-        .spawn()
-        .unwrap()
-        .wait()
-        .unwrap();
+    exece(
+        format!("cargo build -p fajr_kernel --target {rust_target} --profile {rust_profile}"),
+        [("RUSTFLAGS", "-C relocation-model=static")].into_iter(),
+    );
 
     fs::copy(
-        "target/".to_string()
-            + rust_target.as_str()
-            + "/"
-            + rust_profile_subdir
-            + "/"
-            + "fajr_kernel",
+        format!("target/{rust_target}/{rust_profile_subdir}/fajr_kernel"),
         "kernel/kernel",
     )
     .unwrap();
@@ -211,36 +200,12 @@ pub fn main() {
         fs::copy("limine/BOOTX64.EFI", "iso_root/EFI/BOOT/BOOTX64.EFI").unwrap();
         fs::copy("limine/BOOTIA32.EFI", "iso_root/EFI/BOOT/BOOTIA32.EFI").unwrap();
 
-        Command::new("xorriso")
-            .args([
-                "-as",
-                "mkisofs",
-                "-b",
-                "boot/limine/limine-bios-cd.bin",
-                "--no-emul-boot",
-                "-boot-load-size",
-                "4",
-                "-boot-info-table",
-                "--efi-boot",
-                "boot/limine/limine-uefi-cd.bin",
-                "--efi-boot-part",
-                "--efi-boot-image",
-                "--protective-msdos-label",
-                "iso_root",
-                "-o",
-                image_path.as_str(),
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
+        exec(format!(
+            "xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin --no-emul-boot -boot-load-size 4 -boot-info-table
+            --efi-boot boot/limine/limine-uefi-cd.bin --efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {image_path}"
+        ));
 
-        Command::new("./limine/limine")
-            .args(["bios-install", image_path.as_str()])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
+        exec(format!("./limine/limine bios-install {image_path}"));
 
         fs::remove_dir_all("iso_root").unwrap();
     } else {
@@ -248,105 +213,28 @@ pub fn main() {
             fs::remove_file(image_path.as_str()).unwrap();
         }
 
-        Command::new("dd")
-            .args([
-                "if=/dev/zero",
-                "bs=1M",
-                "count=0",
-                "seek=64",
-                ("of=".to_string() + image_path.as_str()).as_str(),
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        Command::new("sgdisk")
-            .args([image_path.as_str(), "-n", "1:2048", "-t", "1:ef00"])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        Command::new("./limine/limine")
-            .args(["bios-install", image_path.as_str()])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        let image_path = image_path.clone() + "@@1M";
-
-        Command::new("mformat")
-            .args(["-i", image_path.as_str()])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        Command::new("mmd")
-            .args([
-                "-i",
-                image_path.as_str(),
-                "::/EFI",
-                "::/EFI/BOOT",
-                "::/boot",
-                "::/boot/limine",
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        Command::new("mcopy")
-            .args(["-i", image_path.as_str(), "kernel/kernel", "::/boot"])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        Command::new("mcopy")
-            .args(["-i", image_path.as_str(), "limine.conf", "::/boot/limine"])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        Command::new("mcopy")
-            .args([
-                "-i",
-                image_path.as_str(),
-                "limine/limine-bios.sys",
-                "::/boot/limine",
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        Command::new("mcopy")
-            .args([
-                "-i",
-                image_path.as_str(),
-                "limine/BOOTX64.EFI",
-                "::/EFI/BOOT",
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        Command::new("mcopy")
-            .args([
-                "-i",
-                image_path.as_str(),
-                "limine/BOOTIA32.EFI",
-                "::/EFI/BOOT",
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
+        exec(format!(
+            "dd if=/dev/zero bs=1M count=0 seek=64 of={image_path}"
+        ));
+        exec(format!("sgdisk {image_path} -n 1:2048 -t 1:ef00"));
+        exec(format!("mformat -i {image_path}@@1M"));
+        exec(format!(
+            "mmd -i {image_path}@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine"
+        ));
+        exec(format!("mcopy -i {image_path}@@1M kernel/kernel ::/boot"));
+        exec(format!(
+            "mcopy -i {image_path}@@1M limine.conf ::/boot/limine"
+        ));
+        exec(format!(
+            "mcopy -i {image_path}@@1M limine/limine-bios.sys ::/boot/limine"
+        ));
+        exec(format!(
+            "mcopy -i {image_path}@@1M limine/BOOTX64.EFI ::/EFI/BOOT"
+        ));
+        exec(format!(
+            "mcopy -i {image_path}@@1M limine/BOOTIA32.EFI ::/EFI/BOOT"
+        ));
+        exec(format!("./limine/limine bios-install {image_path}"));
     }
 
     if !only_build {
@@ -354,40 +242,16 @@ pub fn main() {
 
         if bios {
             if iso {
-                Command::new(qemu_program)
-                    .args(["-M", "q35", "-cdrom", image_path.as_str(), "-boot", "d"])
-                    .spawn()
-                    .unwrap()
-                    .wait()
-                    .unwrap();
+                exec(format!("{qemu_program} -M q35 -cdrom {image_path} -boot d"));
             } else {
-                Command::new(qemu_program)
-                    .args(["-M", "q35", "-hda", image_path.as_str()])
-                    .spawn()
-                    .unwrap()
-                    .wait()
-                    .unwrap();
+                exec(format!("{qemu_program} -M q35 -hda {image_path}"));
             }
         } else {
-            Command::new(qemu_program)
-                .args([
-                    "-M",
-                    "q35",
-                    "-drive",
-                    ("if=pflash,unit=0,format=raw,file=ovmf/".to_string()
-                        + ovmf_code.as_str()
-                        + ",readonly=on")
-                        .as_str(),
-                    "-drive",
-                    ("if=pflash,unit=1,format=raw,file=ovmf/".to_string() + ovmf_vars.as_str())
-                        .as_str(),
-                    if iso { "-cdrom" } else { "-hda" },
-                    image_path.as_str(),
-                ])
-                .spawn()
-                .unwrap()
-                .wait()
-                .unwrap();
+            exec(format!(
+                "{qemu_program} -M q35 -drive if=pflash,unit=0,format=raw,file=ovmf/{ovmf_code},readonly=on
+                -drive if=pflash,unit=1,format=raw,file=ovmf/{ovmf_vars} {} {image_path}",
+                if iso { "-cdrom" } else { "-hda" }
+            ));
         }
     }
 }
