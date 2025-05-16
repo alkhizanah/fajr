@@ -1,0 +1,9 @@
+[workspace]
+resolver = "3"
+
+members = [
+    "builder",
+    "kernel"
+]
+
+default-members = ["builder"]
