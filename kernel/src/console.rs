@@ -23,40 +23,34 @@ pub struct Console<'a> {
 impl Default for Console<'_> {
     fn default() -> Self {
         let font = Psf2Font::parse(include_bytes!("fonts/default8x16.psfu"));
+        let padding_x = 2;
+        let padding_y = 1;
 
         Console {
             font,
             background: Color::BLACK,
             foreground: Color::WHITE,
-            width: FRAMEBUFFER.width() as usize / font.header.glyph_width as usize,
-            height: FRAMEBUFFER.height() as usize / font.header.glyph_height as usize,
-            x: 0,
-            y: 0,
-            padding_x: 2,
-            padding_y: 1,
+            width: (FRAMEBUFFER.width() as usize / font.header.glyph_width as usize) - padding_x,
+            height: (FRAMEBUFFER.height() as usize / font.header.glyph_height as usize) - padding_y,
+            x: padding_x,
+            y: padding_y,
+            padding_x,
+            padding_y,
         }
     }
 }
 
 impl Console<'_> {
-    fn get_padded_x(&self) -> usize {
-        self.x + self.padding_x
-    }
-
-    fn get_padded_y(&self) -> usize {
-        self.y + self.padding_y
-    }
-
     pub fn clear(&mut self) {
         screen::get_colors().fill(self.background);
 
-        self.x = 0;
-        self.y = 0;
+        self.x = self.padding_x;
+        self.y = self.padding_y;
     }
 
     fn write_glyph(&self, glyph_bytes: &[u8]) {
-        let x = self.get_padded_x() * self.font.header.glyph_width as usize;
-        let y = self.get_padded_y() * self.font.header.glyph_height as usize;
+        let x = self.x * self.font.header.glyph_width as usize;
+        let y = self.y * self.font.header.glyph_height as usize;
 
         for dx in 0..self.font.header.glyph_width as usize {
             for dy in 0..self.font.header.glyph_height as usize {
@@ -105,8 +99,8 @@ impl Write for Console<'_> {
             );
         }
 
-        if self.get_padded_x() + 1 >= self.width || ch == '\n' {
-            self.x = 0;
+        if self.x + 1 >= self.width || ch == '\n' {
+            self.x = self.padding_x;
             self.y += 1;
 
             if self.y >= self.height {
@@ -114,7 +108,7 @@ impl Write for Console<'_> {
                 let row_unit =
                     FRAMEBUFFER.width() as usize * self.font.header.glyph_height as usize;
 
-                for current_row in (1..self.height).map(|i| i * row_unit) {
+                for current_row in (self.padding_y..self.height).map(|i| i * row_unit) {
                     let previous_row = current_row - row_unit;
                     let next_row = current_row + row_unit;
 
