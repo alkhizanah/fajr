@@ -1,4 +1,4 @@
-#![feature(abi_x86_interrupt)]
+#![feature(abi_x86_interrupt, allocator_api, alloc_layout_extra)]
 #![no_std]
 #![no_main]
 
@@ -7,6 +7,7 @@ extern crate alloc;
 #[macro_use]
 pub mod console;
 
+pub mod allocators;
 pub mod arch;
 pub mod memory;
 pub mod paging;
@@ -24,8 +25,6 @@ extern "C" fn entry() -> ! {
     arch::interrupts::disable();
 
     arch::init();
-
-    memory::init();
 
     arch::endless_loop();
 }
