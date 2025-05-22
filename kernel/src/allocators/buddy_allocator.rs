@@ -7,22 +7,22 @@ use core::{
 use spin::{Lazy, Mutex};
 
 pub struct BuddyAllocator {
-    head: Option<NonNull<MemoryBlock>>,
+    head: Option<NonNull<Header>>,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct MemoryBlock {
-    /// Size of the memory block including this header
+struct Header {
+    /// Size of the block including this header
     size: usize,
-    next: Option<NonNull<MemoryBlock>>,
+    next: Option<NonNull<Header>>,
 }
 
 impl BuddyAllocator {
     pub fn new(heap_ptr: NonNull<u8>, heap_size: usize) -> Self {
         unsafe {
-            let head_ptr = heap_ptr.as_ptr() as *mut MemoryBlock;
+            let head_ptr = heap_ptr.as_ptr() as *mut Header;
 
-            head_ptr.write(MemoryBlock {
+            head_ptr.write(Header {
                 size: 1 << heap_size.ilog2(),
                 next: None,
             });
@@ -33,7 +33,7 @@ impl BuddyAllocator {
         }
     }
 
-    fn split(&mut self, left_block: NonNull<MemoryBlock>) -> NonNull<MemoryBlock> {
+    fn split(&mut self, left_block: NonNull<Header>) -> NonNull<Header> {
         unsafe {
             let left_ptr = left_block.as_ptr();
             (*left_ptr).size /= 2;
@@ -47,45 +47,50 @@ impl BuddyAllocator {
         }
     }
 
-    fn merge(&mut self, merge_block: &mut NonNull<MemoryBlock>) {
+    fn merge(&mut self, result: &mut NonNull<Header>) {
         unsafe {
+            // Repeat until there isn't any block to merged
             loop {
-                let mut previous_block: Option<NonNull<MemoryBlock>> = None;
-                let mut current_block = self.head;
+                let mut previous: Option<NonNull<Header>> = None;
+                let mut current = self.head;
 
                 let mut merged_at_all = false;
 
-                while let Some(free_block) = current_block {
-                    let merge_block_ptr = merge_block.as_ptr();
-                    let merge_size = (*merge_block_ptr).size;
-                    let free_block_ptr = free_block.as_ptr();
-                    let free_size = (*free_block_ptr).size;
+                while let Some(block) = current {
+                    let result_ptr = result.as_ptr();
+                    let result_size = (*result_ptr).size;
+                    let block_ptr = block.as_ptr();
+                    let block_size = (*block_ptr).size;
 
                     let mut merged_now = false;
 
-                    if free_block_ptr.byte_add(free_size) == merge_block_ptr {
-                        (*free_block_ptr).size += merge_size;
-                        *merge_block = free_block;
+                    if block_ptr.byte_add(block_size) == result_ptr {
+                        // If this block is before the result block, then it should be the one whom the
+                        // result block will be merged into
+                        (*block_ptr).size += result_size;
+                        *result = block;
 
                         merged_at_all = true;
                         merged_now = true;
-                    } else if merge_block_ptr.byte_add(merge_size) == free_block_ptr {
-                        (*merge_block_ptr).size += free_size;
+                    } else if result_ptr.byte_add(result_size) == block_ptr {
+                        // However, if this block is after the result block, then the result block
+                        // should be the one whom the block will be merged into
+                        (*result_ptr).size += block_size;
 
                         merged_at_all = true;
                         merged_now = true;
                     }
 
                     if merged_now {
-                        if let Some(previous_block) = previous_block {
-                            (*previous_block.as_ptr()).next = (*free_block_ptr).next;
+                        if let Some(previous) = previous {
+                            (*previous.as_ptr()).next = (*block_ptr).next;
                         } else {
-                            self.head = (*free_block_ptr).next;
+                            self.head = (*block_ptr).next;
                         }
                     }
 
-                    previous_block = current_block;
-                    current_block = (*free_block_ptr).next;
+                    previous = current;
+                    current = (*block_ptr).next;
                 }
 
                 if !merged_at_all {
@@ -95,19 +100,16 @@ impl BuddyAllocator {
         }
     }
 
-    pub fn calculate_free_space(&self) -> usize {
+    pub fn calculate_free_bytes(&self) -> usize {
         let mut amount = 0;
 
         unsafe {
-            let mut current_block = self.head;
+            let mut current = self.head;
 
-            while let Some(free_block) = current_block {
-                let free_block_ptr = free_block.as_ptr();
-                let free_size = (*free_block_ptr).size;
-
-                amount += free_size - size_of::<MemoryBlock>();
-
-                current_block = (*free_block_ptr).next;
+            while let Some(block) = current {
+                let block_ptr = block.as_ptr();
+                amount += (*block_ptr).size - size_of::<Header>();
+                current = (*block_ptr).next;
             }
         }
 
@@ -131,11 +133,11 @@ impl Deref for LockedBuddyAllocator {
 
 unsafe impl GlobalAlloc for LockedBuddyAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let Ok(allocation) = self.allocate(layout) else {
+        let Ok(data) = self.allocate(layout) else {
             return core::ptr::null_mut();
         };
 
-        allocation.as_ptr() as *mut u8
+        data.as_ptr().cast()
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -149,50 +151,40 @@ unsafe impl Allocator for LockedBuddyAllocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         let mut allocator = self.lock();
 
-        let aligned_data_size = layout.pad_to_align().size();
+        let data_size = layout.pad_to_align().size();
 
-        let allocation_size = size_of::<MemoryBlock>() + aligned_data_size;
+        let allocation_size = size_of::<Header>() + data_size;
 
-        let mut previous_block = None;
-        let mut current_block = allocator.head;
+        let mut previous = None;
+        let mut current = allocator.head;
 
-        while let Some(free_block) = current_block {
-            let free_block_ptr = free_block.as_ptr();
+        unsafe {
+            while let Some(block) = current {
+                let block_ptr = block.as_ptr();
 
-            unsafe {
-                let mut free_size = (*free_block_ptr).size;
-
-                if free_size < allocation_size {
-                    previous_block = current_block;
-                    current_block = (*free_block_ptr).next;
+                if (*block_ptr).size < allocation_size {
+                    previous = current;
+                    current = (*block_ptr).next;
 
                     continue;
                 }
 
-                loop {
-                    if (free_size / 2) > allocation_size {
-                        allocator.split(free_block);
-
-                        free_size = (*free_block_ptr).size;
-
-                        continue;
-                    }
-
-                    let data_ptr = free_block
-                        .as_ptr()
-                        .cast::<u8>()
-                        .byte_add(size_of::<MemoryBlock>());
-
-                    let data = core::slice::from_raw_parts_mut(data_ptr, aligned_data_size);
-
-                    if let Some(previous_block) = previous_block {
-                        (*previous_block.as_ptr()).next = (*free_block.as_ptr()).next;
-                    } else {
-                        allocator.head = (*free_block.as_ptr()).next;
-                    }
-
-                    return Ok(data.into());
+                while (*block_ptr).size / 2 > allocation_size {
+                    allocator.split(block);
                 }
+
+                if let Some(previous) = previous {
+                    (*previous.as_ptr()).next = (*block.as_ptr()).next;
+                } else {
+                    allocator.head = (*block.as_ptr()).next;
+                }
+
+                let data = core::slice::from_raw_parts_mut(
+                    block.byte_add(size_of::<Header>()).as_ptr().cast(),
+                    data_size,
+                );
+
+                return Ok(data.into());
             }
         }
 
@@ -203,17 +195,16 @@ unsafe impl Allocator for LockedBuddyAllocator {
         let mut allocator = self.lock();
 
         unsafe {
-            let mut deallocation_block =
-                ptr.byte_sub(size_of::<MemoryBlock>()).cast::<MemoryBlock>();
+            let mut header = ptr.byte_sub(size_of::<Header>()).cast::<Header>();
 
-            allocator.merge(&mut deallocation_block);
+            allocator.merge(&mut header);
 
             if let Some(head) = allocator.head {
-                (*deallocation_block.as_ptr()).next = (*head.as_ptr()).next;
-                (*head.as_ptr()).next = Some(deallocation_block);
+                (*header.as_ptr()).next = (*head.as_ptr()).next;
+                (*head.as_ptr()).next = Some(header);
             } else {
-                (*deallocation_block.as_ptr()).next = None;
-                allocator.head = Some(deallocation_block);
+                (*header.as_ptr()).next = None;
+                allocator.head = Some(header);
             }
         }
     }
