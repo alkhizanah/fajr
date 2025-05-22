@@ -1,5 +1,6 @@
 use core::{
     alloc::{AllocError, Allocator, GlobalAlloc, Layout},
+    num::NonZero,
     ops::Deref,
     ptr::NonNull,
 };
@@ -7,93 +8,65 @@ use core::{
 use spin::{Lazy, Mutex};
 
 pub struct BuddyAllocator {
-    head: Option<NonNull<Header>>,
+    start: NonZero<usize>,
+    end: NonZero<usize>,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct Header {
-    /// Size of the block including this header
+    free: bool,
     size: usize,
-    next: Option<NonNull<Header>>,
 }
 
 impl BuddyAllocator {
     pub fn new(heap_ptr: NonNull<u8>, heap_size: usize) -> Self {
         unsafe {
-            let head_ptr = heap_ptr.as_ptr() as *mut Header;
-
-            head_ptr.write(Header {
+            heap_ptr.as_ptr().cast::<Header>().write(Header {
+                free: true,
                 size: 1 << heap_size.ilog2(),
-                next: None,
             });
 
-            let head = NonNull::new(head_ptr);
-
-            Self { head }
+            Self {
+                start: heap_ptr.addr(),
+                end: heap_ptr.byte_add(heap_size).addr(),
+            }
         }
     }
 
-    fn split(&mut self, left_block: NonNull<Header>) -> NonNull<Header> {
+    fn split(&mut self, block: NonNull<Header>) -> NonNull<Header> {
         unsafe {
-            let left_ptr = left_block.as_ptr();
-            (*left_ptr).size /= 2;
+            let mut header = block.read();
+            header.size /= 2;
+            block.write(header);
 
-            let right_ptr = left_block.byte_add((*left_ptr).size);
-            right_ptr.write(*left_ptr);
-
-            (*left_ptr).next = Some(right_ptr);
-
-            right_ptr
+            let buddy = block.byte_add(header.size);
+            buddy.write(header);
+            buddy
         }
     }
 
     fn merge(&mut self, result: &mut NonNull<Header>) {
-        unsafe {
-            // Repeat until there isn't any block to merged
-            loop {
-                let mut previous: Option<NonNull<Header>> = None;
-                let mut current = self.head;
+        loop {
+            unsafe {
+                let result_header = result.read();
 
-                let mut merged_at_all = false;
+                let buddy =
+                    result.map_addr(|addr| NonZero::new_unchecked(addr.get() ^ result_header.size));
 
-                while let Some(block) = current {
-                    let result_ptr = result.as_ptr();
-                    let result_size = (*result_ptr).size;
-                    let block_ptr = block.as_ptr();
-                    let block_size = (*block_ptr).size;
-
-                    let mut merged_now = false;
-
-                    if block_ptr.byte_add(block_size) == result_ptr {
-                        // If this block is before the result block, then it should be the one whom the
-                        // result block will be merged into
-                        (*block_ptr).size += result_size;
-                        *result = block;
-
-                        merged_at_all = true;
-                        merged_now = true;
-                    } else if result_ptr.byte_add(result_size) == block_ptr {
-                        // However, if this block is after the result block, then the result block
-                        // should be the one whom the block will be merged into
-                        (*result_ptr).size += block_size;
-
-                        merged_at_all = true;
-                        merged_now = true;
-                    }
-
-                    if merged_now {
-                        if let Some(previous) = previous {
-                            (*previous.as_ptr()).next = (*block_ptr).next;
-                        } else {
-                            self.head = (*block_ptr).next;
-                        }
-                    }
-
-                    previous = current;
-                    current = (*block_ptr).next;
+                if buddy.addr() >= self.end {
+                    break;
                 }
 
-                if !merged_at_all {
+                let buddy_header = buddy.read();
+
+                if buddy_header.free {
+                    if buddy < *result {
+                        (*buddy.as_ptr()).size <<= 1;
+                        *result = buddy;
+                    } else if *result < buddy {
+                        (*result.as_ptr()).size <<= 1;
+                    }
+                } else {
                     break;
                 }
             }
@@ -103,13 +76,17 @@ impl BuddyAllocator {
     pub fn calculate_free_bytes(&self) -> usize {
         let mut amount = 0;
 
-        unsafe {
-            let mut current = self.head;
+        let mut current: NonNull<Header> = NonNull::dangling().map_addr(|_| self.start);
 
-            while let Some(block) = current {
-                let block_ptr = block.as_ptr();
-                amount += (*block_ptr).size - size_of::<Header>();
-                current = (*block_ptr).next;
+        while current.addr() < self.end {
+            unsafe {
+                let header = current.read();
+
+                if header.free {
+                    amount += header.size - size_of::<Header>();
+                }
+
+                current = current.byte_add(header.size);
             }
         }
 
@@ -119,9 +96,6 @@ impl BuddyAllocator {
 
 #[repr(transparent)]
 pub struct LockedBuddyAllocator(pub Lazy<Mutex<BuddyAllocator>>);
-
-unsafe impl Send for LockedBuddyAllocator {}
-unsafe impl Sync for LockedBuddyAllocator {}
 
 impl Deref for LockedBuddyAllocator {
     type Target = Mutex<BuddyAllocator>;
@@ -155,34 +129,29 @@ unsafe impl Allocator for LockedBuddyAllocator {
 
         let allocation_size = size_of::<Header>() + data_size;
 
-        let mut previous = None;
-        let mut current = allocator.head;
+        let mut current: NonNull<Header> = NonNull::dangling().map_addr(|_| allocator.start);
 
-        unsafe {
-            while let Some(block) = current {
-                let block_ptr = block.as_ptr();
+        while current.addr() < allocator.end {
+            unsafe {
+                let mut header = current.read();
 
-                if (*block_ptr).size < allocation_size {
-                    previous = current;
-                    current = (*block_ptr).next;
+                if !header.free || header.size < allocation_size {
+                    current = current.byte_add(header.size);
 
                     continue;
                 }
 
-                while (*block_ptr).size / 2 > allocation_size {
-                    allocator.split(block);
+                while header.size / 2 > allocation_size {
+                    allocator.split(current);
+
+                    header = current.read();
                 }
 
-                if let Some(previous) = previous {
-                    (*previous.as_ptr()).next = (*block.as_ptr()).next;
-                } else {
-                    allocator.head = (*block.as_ptr()).next;
-                }
+                (*current.as_ptr()).free = false;
 
-                let data = core::slice::from_raw_parts_mut(
-                    block.byte_add(size_of::<Header>()).as_ptr().cast(),
-                    data_size,
-                );
+                let data_ptr = current.byte_add(size_of::<Header>()).as_ptr().cast();
+
+                let data = core::slice::from_raw_parts_mut(data_ptr, data_size);
 
                 return Ok(data.into());
             }
@@ -195,17 +164,11 @@ unsafe impl Allocator for LockedBuddyAllocator {
         let mut allocator = self.lock();
 
         unsafe {
-            let mut header = ptr.byte_sub(size_of::<Header>()).cast::<Header>();
+            let mut allocation = ptr.byte_sub(size_of::<Header>()).cast::<Header>();
 
-            allocator.merge(&mut header);
+            (*allocation.as_ptr()).free = true;
 
-            if let Some(head) = allocator.head {
-                (*header.as_ptr()).next = (*head.as_ptr()).next;
-                (*head.as_ptr()).next = Some(header);
-            } else {
-                (*header.as_ptr()).next = None;
-                allocator.head = Some(header);
-            }
+            allocator.merge(&mut allocation);
         }
     }
 }
