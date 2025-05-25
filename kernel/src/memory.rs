@@ -5,10 +5,7 @@ use limine::memory_map::EntryType as MemoryEntryType;
 use spin::{lazy::Lazy, mutex::Mutex};
 
 use crate::{
-    allocators::{
-        buddy_allocator::{BuddyAllocator, LockedBuddyAllocator},
-        first_fit_allocator::{FirstFitAllocator, LockedFirstFitAllocator},
-    },
+    allocators::buddy_allocator::{BuddyAllocator, LockedBuddyAllocator},
     paging::virt_from_phys,
     requests::MEMORY_MAP_REQUEST,
 };
@@ -25,7 +22,7 @@ lazy_static! {
             .expect("could not find a usable memory entry");
 
         core::ptr::slice_from_raw_parts_mut(
-            virt_from_phys(heap.base) as *mut u8,
+            virt_from_phys(heap.base as usize) as *mut u8,
             heap.length as usize,
         )
         .as_mut()
@@ -44,15 +41,3 @@ pub static GLOBAL_BUDDY_ALLOCATOR: LockedBuddyAllocator = LockedBuddyAllocator(L
         )
     })
 }));
-
-pub static GLOBAL_FIRST_FIT_ALLOCATOR: LockedFirstFitAllocator =
-    LockedFirstFitAllocator(Lazy::new(|| {
-        Mutex::new(unsafe {
-            let mut heap = HEAP.lock();
-
-            FirstFitAllocator::new(
-                NonNull::new(heap.as_mut_ptr()).unwrap_unchecked(),
-                heap.len(),
-            )
-        })
-    }));
