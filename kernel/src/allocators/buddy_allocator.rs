@@ -33,60 +33,18 @@ impl BuddyAllocator {
         }
     }
 
-    fn split(&mut self, block: NonNull<Header>) -> NonNull<Header> {
-        unsafe {
-            let mut header = block.read();
-            header.size /= 2;
-            block.write(header);
-
-            let buddy = block.byte_add(header.size);
-            buddy.write(header);
-            buddy
-        }
-    }
-
-    fn merge(&mut self, result: &mut NonNull<Header>) {
-        loop {
-            unsafe {
-                let result_header = result.read();
-
-                let buddy =
-                    result.map_addr(|addr| NonZero::new_unchecked(addr.get() ^ result_header.size));
-
-                if buddy.addr() >= self.end {
-                    break;
-                }
-
-                let buddy_header = buddy.read();
-
-                if buddy_header.free {
-                    if buddy < *result {
-                        (*buddy.as_ptr()).size <<= 1;
-                        *result = buddy;
-                    } else if *result < buddy {
-                        (*result.as_ptr()).size <<= 1;
-                    }
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-
     pub fn calculate_free_bytes(&self) -> usize {
         let mut amount = 0;
 
-        let mut current: NonNull<Header> = NonNull::dangling().map_addr(|_| self.start);
+        let mut current: NonNull<Header> = NonNull::dangling().with_addr(self.start);
 
         while current.addr() < self.end {
             unsafe {
-                let header = current.read();
-
-                if header.free {
-                    amount += header.size - size_of::<Header>();
+                if current.read().free {
+                    amount += current.read().size - size_of::<Header>();
                 }
 
-                current = current.byte_add(header.size);
+                current = current.byte_add(current.read().size);
             }
         }
 
@@ -106,6 +64,7 @@ impl Deref for LockedBuddyAllocator {
 }
 
 unsafe impl GlobalAlloc for LockedBuddyAllocator {
+    #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let Ok(data) = self.allocate(layout) else {
             return core::ptr::null_mut();
@@ -114,6 +73,7 @@ unsafe impl GlobalAlloc for LockedBuddyAllocator {
         data.as_ptr().cast()
     }
 
+    #[inline]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe {
             self.deallocate(ptr.as_mut().unwrap().into(), layout);
@@ -123,28 +83,26 @@ unsafe impl GlobalAlloc for LockedBuddyAllocator {
 
 unsafe impl Allocator for LockedBuddyAllocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        let mut allocator = self.lock();
+        let allocator = self.lock();
 
         let data_size = layout.pad_to_align().size();
 
         let allocation_size = size_of::<Header>() + data_size;
 
-        let mut current: NonNull<Header> = NonNull::dangling().map_addr(|_| allocator.start);
+        let mut current: NonNull<Header> = NonNull::dangling().with_addr(allocator.start);
 
         while current.addr() < allocator.end {
             unsafe {
-                let mut header = current.read();
-
-                if !header.free || header.size < allocation_size {
-                    current = current.byte_add(header.size);
+                if !current.read().free || current.read().size < allocation_size {
+                    current = current.byte_add(current.read().size);
 
                     continue;
                 }
 
-                while header.size / 2 > allocation_size {
-                    allocator.split(current);
-
-                    header = current.read();
+                while (current.read().size >> 1) > allocation_size {
+                    (*current.as_ptr()).size >>= 1;
+                    let buddy = current.byte_add(current.read().size);
+                    buddy.write(current.read());
                 }
 
                 (*current.as_ptr()).free = false;
@@ -161,14 +119,32 @@ unsafe impl Allocator for LockedBuddyAllocator {
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, _layout: Layout) {
-        let mut allocator = self.lock();
+        let allocator = self.lock();
 
         unsafe {
             let mut allocation = ptr.byte_sub(size_of::<Header>()).cast::<Header>();
 
             (*allocation.as_ptr()).free = true;
 
-            allocator.merge(&mut allocation);
+            loop {
+                let buddy = allocation
+                    .map_addr(|addr| NonZero::new_unchecked(addr.get() ^ allocation.read().size));
+
+                if buddy.addr() >= allocator.end {
+                    break;
+                }
+
+                if !buddy.read().free {
+                    break;
+                }
+
+                if buddy < allocation {
+                    (*buddy.as_ptr()).size <<= 1;
+                    allocation = buddy;
+                } else if allocation < buddy {
+                    (*allocation.as_ptr()).size <<= 1;
+                }
+            }
         }
     }
 }
