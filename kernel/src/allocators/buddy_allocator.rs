@@ -127,10 +127,15 @@ unsafe impl Allocator for LockedBuddyAllocator {
             (*allocation.as_ptr()).free = true;
 
             loop {
-                let buddy = allocation
-                    .map_addr(|addr| NonZero::new_unchecked(addr.get() ^ allocation.read().size));
+                let buddy = allocation.map_addr(|addr| {
+                    let addr = addr.get();
+                    let start = allocator.start.get();
+                    let offset = addr - start;
+                    let size = allocation.read().size;
+                    NonZero::new_unchecked(start + (offset ^ size))
+                });
 
-                if buddy.addr() >= allocator.end {
+                if buddy.addr() >= allocator.end || buddy.addr() < allocator.start {
                     break;
                 }
 
