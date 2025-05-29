@@ -9,6 +9,6 @@ lazy_static! {
         .offset() as usize;
 }
 
-pub fn virt_from_phys(phys: usize) -> usize {
+pub fn offset(phys: usize) -> usize {
     phys + *HHDM_OFFSET
 }
