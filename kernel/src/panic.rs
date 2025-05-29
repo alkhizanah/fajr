@@ -24,8 +24,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
         if let Some(location) = info.location() {
             let _ = writeln!(
                 &mut console,
-                "Panic occured at {} in the kernel's source code",
-                location
+                "Panic occured at {location} in the kernel's source code",
             );
         } else {
             let _ = writeln!(

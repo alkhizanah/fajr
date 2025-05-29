@@ -63,6 +63,7 @@ pub fn main() {
     let mut only_build = false;
     let mut iso = true;
     let mut bios = true;
+    let mut clippy = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -74,6 +75,7 @@ pub fn main() {
 
                 only_build = true;
             }
+
             "with" => {
                 let Some(key) = args.next() else {
                     eprintln!("expected a key");
@@ -107,6 +109,7 @@ pub fn main() {
                     "hdd" => iso = false,
                     "bios" => bios = true,
                     "uefi" => bios = false,
+                    "clippy" => clippy = true,
 
                     _ => {
                         eprintln!("unknown key: {key}");
@@ -120,6 +123,27 @@ pub fn main() {
                 exit(1);
             }
         }
+    }
+
+    let rust_target = arch.as_str().to_string() + "-unknown-none";
+
+    let rust_profile_subdir = match rust_profile.as_str() {
+        "dev" => "debug",
+        "release" => "release",
+
+        _ => {
+            println!("unknown rust profile: {rust_profile}");
+            exit(1);
+        }
+    };
+
+    if clippy {
+        exece(
+            format!("cargo clippy -p fajr_kernel --target {rust_target}"),
+            [("RUSTFLAGS", "-C relocation-model=static")].into_iter(),
+        );
+
+        return;
     }
 
     if !fs::exists("limine").is_ok_and(|exists| exists) {
@@ -144,18 +168,6 @@ pub fn main() {
             "curl -Lo {ovmf_vars} https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/{ovmf_vars}"
         ));
     }
-
-    let rust_target = arch.as_str().to_string() + "-unknown-none";
-
-    let rust_profile_subdir = match rust_profile.as_str() {
-        "dev" => "debug",
-        "release" => "release",
-
-        _ => {
-            println!("unknown rust profile: {rust_profile}");
-            exit(1);
-        }
-    };
 
     let image_path = "fajr-".to_string() + arch.as_str() + if iso { ".iso" } else { ".hdd" };
 
