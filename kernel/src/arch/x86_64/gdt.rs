@@ -54,7 +54,7 @@ enum Descriptor {
 }
 
 #[allow(dead_code)]
-mod descriptor_flags {
+mod flags {
     /// Set by the processor if this segment has been accessed. Only cleared by software.
     /// _Setting_ this bit in software prevents GDT writes on first use.
     pub const ACCESSED: u64 = 1 << 40;
@@ -115,29 +115,29 @@ mod descriptor_flags {
 impl Descriptor {
     #[inline]
     pub const fn kernel_code_segment() -> Descriptor {
-        Descriptor::UserSegment(descriptor_flags::KERNEL_CODE)
+        Descriptor::UserSegment(flags::KERNEL_CODE)
     }
 
     #[inline]
     pub const fn kernel_data_segment() -> Descriptor {
-        Descriptor::UserSegment(descriptor_flags::KERNEL_DATA)
+        Descriptor::UserSegment(flags::KERNEL_DATA)
     }
 
     #[inline]
     pub const fn user_code_segment() -> Descriptor {
-        Descriptor::UserSegment(descriptor_flags::USER_CODE)
+        Descriptor::UserSegment(flags::USER_CODE)
     }
 
     #[inline]
     pub const fn user_data_segment() -> Descriptor {
-        Descriptor::UserSegment(descriptor_flags::USER_DATA)
+        Descriptor::UserSegment(flags::USER_DATA)
     }
 
     #[inline]
     pub fn task_state_segment(tss: &'static TaskStateSegment) -> Descriptor {
         let ptr = tss as *const _ as u64;
 
-        let mut low = descriptor_flags::PRESENT;
+        let mut low = flags::PRESENT;
         let mut high = 0;
 
         // address

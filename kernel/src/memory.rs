@@ -6,7 +6,7 @@ use spin::{lazy::Lazy, mutex::Mutex};
 
 use crate::{
     allocators::buddy_allocator::{BuddyAllocator, LockedBuddyAllocator},
-    paging::virt_from_phys,
+    paging::offset,
     requests::MEMORY_MAP_REQUEST,
 };
 
@@ -21,12 +21,10 @@ lazy_static! {
             .max_by(|a, b| a.length.cmp(&b.length))
             .expect("could not find a usable memory entry");
 
-        core::ptr::slice_from_raw_parts_mut(
-            virt_from_phys(heap.base as usize) as *mut u8,
+        &mut *core::ptr::slice_from_raw_parts_mut(
+            offset(heap.base as usize) as *mut u8,
             heap.length as usize,
         )
-        .as_mut()
-        .unwrap_unchecked()
     });
 }
 

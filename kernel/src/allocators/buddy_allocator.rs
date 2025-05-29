@@ -76,7 +76,7 @@ unsafe impl GlobalAlloc for LockedBuddyAllocator {
     #[inline]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe {
-            self.deallocate(ptr.as_mut().unwrap().into(), layout);
+            self.deallocate(NonNull::from(&mut *ptr), layout);
         }
     }
 }
