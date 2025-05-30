@@ -7,13 +7,19 @@ use bit_field::BitField;
 
 use crate::paging;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[repr(C, align(4096))]
 pub struct PageTable {
     entries: [Entry; 512],
 }
 
 impl PageTable {
+    pub fn empty() -> Self {
+        Self {
+            entries: [Entry(0); 512],
+        }
+    }
+
     pub fn translate(&self, virt: usize) -> Option<usize> {
         let offset = PageTableOffset::from(virt);
         let indices = PageTableIndices::from(virt);

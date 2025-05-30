@@ -1,5 +1,6 @@
 use lazy_static::lazy_static;
 
+pub use crate::arch::paging::*;
 use crate::requests::HHDM_REQUEST;
 
 lazy_static! {
