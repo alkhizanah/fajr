@@ -1,4 +1,4 @@
-#![feature(abi_x86_interrupt, allocator_api, alloc_layout_extra)]
+#![feature(abi_x86_interrupt, allocator_api)]
 #![no_std]
 #![no_main]
 
