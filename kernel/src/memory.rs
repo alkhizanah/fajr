@@ -10,7 +10,7 @@ use crate::{
 };
 
 #[global_allocator]
-static PAGE_ALLOCATOR: LockedPageAllocator = LockedPageAllocator(Lazy::new(|| {
+pub static PAGE_ALLOCATOR: LockedPageAllocator = LockedPageAllocator(Lazy::new(|| {
     Mutex::new(unsafe {
         let heap = MEMORY_MAP_REQUEST
             .get_response()
@@ -28,10 +28,8 @@ static PAGE_ALLOCATOR: LockedPageAllocator = LockedPageAllocator(Lazy::new(|| {
             .expect("could not find a large usable memory region");
 
         let heap_len = heap.len();
-
         let heap_start = NonNull::from(heap).cast();
-        let heap_end = heap_start.byte_add(heap_len);
 
-        PageAllocator::new(heap_start, heap_end)
+        PageAllocator::new(heap_start, heap_len)
     })
 }));

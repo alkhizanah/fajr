@@ -7,6 +7,8 @@ use bit_field::BitField;
 
 use crate::paging;
 
+pub const MIN_PAGE_SIZE: usize = 4096;
+
 #[derive(Debug, Clone)]
 #[repr(C, align(4096))]
 pub struct PageTable {

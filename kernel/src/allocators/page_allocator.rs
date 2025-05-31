@@ -7,23 +7,20 @@ use core::{
 use bit_field::BitField;
 use spin::{lazy::Lazy, mutex::Mutex};
 
-pub const MIN_PAGE_SIZE: usize = 4 * 1024;
+use crate::paging::MIN_PAGE_SIZE;
 
 pub struct PageAllocator {
     heap_start: NonNull<u8>,
-    heap_end: NonNull<u8>,
     page_count: usize,
 }
 
 impl PageAllocator {
-    pub fn new(heap_start: NonNull<u8>, heap_end: NonNull<u8>) -> PageAllocator {
-        let heap_len = heap_end.addr().get() - heap_start.addr().get();
-
+    pub fn new(heap_start: NonNull<u8>, heap_len: usize) -> PageAllocator {
+        // We intentionally use integer division to not overflow the heap
         let page_count = heap_len / MIN_PAGE_SIZE;
 
         let page_allocator = PageAllocator {
             heap_start,
-            heap_end,
             page_count,
         };
 
@@ -42,6 +39,18 @@ impl PageAllocator {
         for i in needed_page_count..self.page_count {
             self.set_free_bit(i, true);
         }
+    }
+
+    pub fn calculate_free_space(&self) -> usize {
+        let mut amount = 0;
+
+        for i in 0..self.page_count {
+            if self.is_free(i) {
+                amount += MIN_PAGE_SIZE;
+            }
+        }
+
+        amount
     }
 
     #[inline]
@@ -67,13 +76,20 @@ impl PageAllocator {
         unsafe { self.heap_start.byte_add(index * MIN_PAGE_SIZE) }
     }
 
-    fn get_free_pages(&self, needed_page_count: usize) -> Option<usize> {
-        for i in 0..self.page_count {
-            if self.is_free(i) {
+    #[inline]
+    fn get_page_index_of(&self, ptr: *mut u8) -> usize {
+        (ptr.addr() - self.heap_start.addr().get()).div_ceil(MIN_PAGE_SIZE)
+    }
+
+    pub fn alloc(&self, layout: Layout) -> *mut u8 {
+        let needed_page_count = layout.size().div_ceil(MIN_PAGE_SIZE);
+
+        for page_index in 0..self.page_count {
+            if self.is_free(page_index) {
                 let mut fits = true;
 
-                for j in i..(i + needed_page_count) {
-                    if !self.is_free(j) {
+                for i in page_index..(page_index + needed_page_count) {
+                    if !self.is_free(i) {
                         fits = false;
 
                         break;
@@ -81,27 +97,13 @@ impl PageAllocator {
                 }
 
                 if fits {
-                    return Some(i);
+                    for i in page_index..(page_index + needed_page_count) {
+                        self.set_free_bit(i, false);
+                    }
+
+                    return self.get_page(page_index).as_ptr();
                 }
             }
-        }
-
-        None
-    }
-
-    fn get_page_index_of(&self, address: usize) -> usize {
-        (self.heap_end.addr().get() - address).div_ceil(MIN_PAGE_SIZE)
-    }
-
-    pub fn alloc(&self, layout: Layout) -> *mut u8 {
-        let needed_page_count = layout.size().div_ceil(MIN_PAGE_SIZE);
-
-        if let Some(first_page_index) = self.get_free_pages(needed_page_count) {
-            for i in first_page_index..(first_page_index + needed_page_count) {
-                self.set_free_bit(i, false);
-            }
-
-            return self.get_page(first_page_index).as_ptr();
         }
 
         core::ptr::null_mut()
@@ -110,61 +112,43 @@ impl PageAllocator {
     pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let needed_page_count = layout.size().div_ceil(MIN_PAGE_SIZE);
 
-        let first_page_index = self.get_page_index_of(ptr.addr());
+        let page_index = self.get_page_index_of(ptr);
 
-        for i in first_page_index..(first_page_index + needed_page_count) {
+        for i in page_index..(page_index + needed_page_count) {
             self.set_free_bit(i, true);
         }
+
+        println!("deallocated {needed_page_count} pages");
     }
 
-    fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let new_layout = unsafe { Layout::from_size_align_unchecked(new_size, layout.align()) };
-
-        let new_ptr = self.alloc(new_layout);
-
-        if !new_ptr.is_null() {
-            unsafe {
-                core::ptr::copy_nonoverlapping(ptr, new_ptr, layout.size().min(new_size));
-            }
-
-            self.dealloc(ptr, layout);
-        }
-
-        new_ptr
-    }
-
-    pub fn resize(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let previous_needed_page_count = layout.size().div_ceil(MIN_PAGE_SIZE);
+    pub fn resize(&self, old_ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        let old_needed_page_count = layout.size().div_ceil(MIN_PAGE_SIZE);
         let new_needed_page_count = new_size.div_ceil(MIN_PAGE_SIZE);
 
-        // Trying to not call realloc until it is really a must to do
-        match new_needed_page_count.cmp(&previous_needed_page_count) {
-            // That's simple, we shouldn't call realloc to allocate the same bytes
-            Ordering::Equal => ptr,
+        match new_needed_page_count.cmp(&old_needed_page_count) {
+            // We shouldn't reallocate with the same page count
+            Ordering::Equal => old_ptr,
 
-            // And if we are shrinking the size, we should just make the excess pages be free
+            // And if we are shrinking the page count, we should free the excess pages
             Ordering::Less => {
-                let first_page_index = self.get_page_index_of(ptr.addr());
+                let page_index = self.get_page_index_of(old_ptr);
 
-                for i in (first_page_index + new_needed_page_count)
-                    ..(first_page_index + previous_needed_page_count)
+                for i in (page_index + new_needed_page_count)..(page_index + old_needed_page_count)
                 {
                     self.set_free_bit(i, true);
                 }
 
-                ptr
+                old_ptr
             }
 
-            // Now the fun part, growing the size requires us to check if there is some memory
-            // after the end which we can use, if there isn't then we have no choice but
-            // to reallocate
+            // Lastly, growing the page count requires us to check if there is some excess pages
+            // which we can use, otherwise we have no choice but to reallocate
             Ordering::Greater => {
-                let first_page_index = self.get_page_index_of(ptr.addr());
+                let page_index = self.get_page_index_of(old_ptr);
 
                 let mut fits = true;
 
-                for i in (first_page_index + previous_needed_page_count)
-                    ..(first_page_index + new_needed_page_count)
+                for i in (page_index + old_needed_page_count)..(page_index + new_needed_page_count)
                 {
                     if !self.is_free(i) {
                         fits = false;
@@ -174,17 +158,30 @@ impl PageAllocator {
                 }
 
                 if fits {
-                    // Yay, we can just expand our memory!!
-                    for i in (first_page_index + previous_needed_page_count)
-                        ..(first_page_index + new_needed_page_count)
+                    // We can expand our memory :)
+                    for i in
+                        (page_index + old_needed_page_count)..(page_index + new_needed_page_count)
                     {
                         self.set_free_bit(i, false);
                     }
 
-                    ptr
+                    old_ptr
                 } else {
-                    // We couldn't escape from calling realloc :<
-                    self.realloc(ptr, layout, new_size)
+                    // We must reallocate :(
+                    let new_layout =
+                        unsafe { Layout::from_size_align_unchecked(new_size, layout.align()) };
+
+                    let new_ptr = self.alloc(new_layout);
+
+                    if !new_ptr.is_null() {
+                        unsafe {
+                            core::ptr::copy_nonoverlapping(old_ptr, new_ptr, new_size);
+                        }
+
+                        self.dealloc(old_ptr, layout);
+                    }
+
+                    new_ptr
                 }
             }
         }
