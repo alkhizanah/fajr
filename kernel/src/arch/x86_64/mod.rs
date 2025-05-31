@@ -1,6 +1,7 @@
 pub mod gdt;
 pub mod idt;
 pub mod interrupts;
+pub mod ioapic;
 pub mod paging;
 pub mod tss;
 

@@ -1,29 +1,31 @@
 use core::{
+    alloc::Layout,
     arch::asm,
-    ops::{BitOr, Index, IndexMut},
+    ops::{Deref, Index, IndexMut},
 };
 
 use bit_field::BitField;
 
-use crate::paging;
+use crate::{memory::PAGE_ALLOCATOR, paging};
 
+const TABLE_ENTRY_COUNT: usize = 512;
 pub const MIN_PAGE_SIZE: usize = 4096;
 
 #[derive(Debug, Clone)]
 #[repr(C, align(4096))]
 pub struct PageTable {
-    entries: [Entry; 512],
+    entries: [Entry; TABLE_ENTRY_COUNT],
 }
 
 impl PageTable {
     pub fn empty() -> Self {
         Self {
-            entries: [Entry(0); 512],
+            entries: [Entry(0); TABLE_ENTRY_COUNT],
         }
     }
 
     pub fn translate(&self, virt: usize) -> Option<usize> {
-        let offset = PageTableOffset::from(virt);
+        let offset = *PageTableOffset::from(virt);
         let indices = PageTableIndices::from(virt);
 
         let mut table = self;
@@ -45,11 +47,18 @@ impl PageTable {
                         return Some(
                             entry.get_phys() as usize
                                 | ((indices.p1_index as usize) << 12)
-                                | offset,
+                                | offset as usize,
                         );
                     }
 
-                    3 => todo!("translation of level 3 huge page"),
+                    3 => {
+                        return Some(
+                            entry.get_phys() as usize
+                                | ((indices.p2_index as usize) << 12 << 9)
+                                | ((indices.p1_index as usize) << 12)
+                                | offset as usize,
+                        );
+                    }
 
                     _ => panic!("huge page bit must not be set in a level {} page", level),
                 }
@@ -61,10 +70,82 @@ impl PageTable {
         let entry = &table[indices.p1_index];
 
         if entry.is_present() {
-            Some(entry.get_phys() as usize | offset)
+            Some(entry.get_phys() as usize | offset as usize)
         } else {
             None
         }
+    }
+
+    pub fn map(&mut self, virt: usize, phys: usize) -> &mut Entry {
+        debug_assert_eq!(virt % MIN_PAGE_SIZE, 0);
+        debug_assert_eq!(phys % MIN_PAGE_SIZE, 0);
+
+        let indices = PageTableIndices::from(virt);
+
+        let mut table = self;
+
+        for index in [indices.p4_index, indices.p3_index, indices.p2_index] {
+            let entry = &mut table[index];
+
+            if !entry.is_present() {
+                let new_table_virt = PAGE_ALLOCATOR.lock().alloc(Layout::new::<PageTable>());
+
+                unsafe {
+                    new_table_virt.cast::<PageTable>().write(PageTable::empty());
+                }
+
+                let new_table_phys = get_active_table()
+                    .translate(new_table_virt as usize)
+                    .unwrap();
+
+                entry.set_phys(new_table_phys as usize as u64);
+                entry.set_present(true);
+                entry.set_writable(true);
+            } else if entry.is_huge() {
+                todo!("mapping a huge page");
+            }
+
+            table = entry.get_page_table();
+        }
+
+        let entry = &mut table[indices.p1_index];
+
+        let was_present = entry.is_present();
+
+        entry.set_phys(phys as u64);
+        entry.set_present(true);
+
+        if was_present {
+            unsafe { asm!("invlpg [{}]", in(reg) virt, options(preserves_flags)) }
+        }
+
+        entry
+    }
+
+    pub fn unmap(&mut self, virt: usize) {
+        debug_assert_eq!(virt % MIN_PAGE_SIZE, 0);
+
+        let indices = PageTableIndices::from(virt);
+
+        let mut table = self;
+
+        for index in [indices.p4_index, indices.p3_index, indices.p2_index] {
+            let entry = &table[index];
+
+            if !entry.is_present() {
+                return;
+            }
+
+            if entry.is_huge() {
+                todo!("unmapping a huge page");
+            }
+
+            table = entry.get_page_table();
+        }
+
+        let entry = &mut table[indices.p1_index];
+
+        entry.set_present(false);
     }
 }
 
@@ -78,11 +159,11 @@ impl From<usize> for PageTableOffset {
     }
 }
 
-impl BitOr<PageTableOffset> for usize {
-    type Output = usize;
+impl Deref for PageTableOffset {
+    type Target = u16;
 
-    fn bitor(self, rhs: PageTableOffset) -> Self::Output {
-        self | rhs.0 as usize
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

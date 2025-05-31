@@ -7,6 +7,7 @@ extern crate alloc;
 #[macro_use]
 pub mod console;
 
+pub mod acpi;
 pub mod allocators;
 pub mod arch;
 pub mod memory;
