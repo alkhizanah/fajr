@@ -1,6 +1,7 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     cmp::Ordering,
+    ops::Deref,
     ptr::NonNull,
 };
 
@@ -79,6 +80,19 @@ impl PageAllocator {
     #[inline]
     fn get_page_index_of(&self, ptr: *mut u8) -> usize {
         (ptr.addr() - self.heap_start.addr().get()).div_ceil(MIN_PAGE_SIZE)
+    }
+
+    #[inline]
+    pub fn contains(&self, address: usize) -> bool {
+        unsafe {
+            address > self.heap_start.addr().get()
+                && address
+                    < self
+                        .heap_start
+                        .byte_add(self.page_count * MIN_PAGE_SIZE)
+                        .addr()
+                        .get()
+        }
     }
 
     pub fn alloc(&self, layout: Layout) -> *mut u8 {
@@ -188,6 +202,7 @@ impl PageAllocator {
     }
 }
 
+#[repr(transparent)]
 pub struct LockedPageAllocator(pub Lazy<Mutex<PageAllocator>>);
 
 unsafe impl Send for LockedPageAllocator {}
@@ -195,14 +210,22 @@ unsafe impl Sync for LockedPageAllocator {}
 
 unsafe impl GlobalAlloc for LockedPageAllocator {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
-        self.0.lock().alloc(layout)
+        self.lock().alloc(layout)
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        self.0.lock().dealloc(ptr, layout);
+        self.lock().dealloc(ptr, layout);
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        self.0.lock().resize(ptr, layout, new_size)
+        self.lock().resize(ptr, layout, new_size)
+    }
+}
+
+impl Deref for LockedPageAllocator {
+    type Target = Lazy<Mutex<PageAllocator>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
