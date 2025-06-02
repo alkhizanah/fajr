@@ -26,7 +26,7 @@ impl PageAllocator {
     }
 
     /// Checks whether a region can be used for page allocation
-    #[inline]
+    #[inline(always)]
     pub fn can_be_used(region_len: usize) -> bool {
         region_len
             > (region_len / MIN_PAGE_SIZE)
@@ -36,14 +36,8 @@ impl PageAllocator {
 
     fn reserve_bitmap_pages(&self) {
         let needed_page_count = self.page_count.div_ceil(8).div_ceil(MIN_PAGE_SIZE);
-
-        for i in 0..needed_page_count {
-            self.set_free_bit(i, false);
-        }
-
-        for i in needed_page_count..self.page_count {
-            self.set_free_bit(i, true);
-        }
+        (0..needed_page_count).for_each(|i| self.set_free_bit(i, false));
+        (needed_page_count..self.page_count).for_each(|i| self.set_free_bit(i, true));
     }
 
     pub fn calculate_free_space(&self) -> usize {
@@ -52,35 +46,29 @@ impl PageAllocator {
             .sum()
     }
 
-    #[inline]
+    #[inline(always)]
     fn is_free(&self, index: usize) -> bool {
-        let byte_index = index / 8;
-        let bit_index = index % 8;
-
-        unsafe { (*self.region_start.byte_add(byte_index).as_ptr()).get_bit(bit_index) }
+        unsafe { (*self.region_start.byte_add(index / 8).as_ptr()).get_bit(index % 8) }
     }
 
-    #[inline]
+    #[inline(always)]
     fn set_free_bit(&self, index: usize, value: bool) {
-        let byte_index = index / 8;
-        let bit_index = index % 8;
-
         unsafe {
-            (*self.region_start.byte_add(byte_index).as_ptr()).set_bit(bit_index, value);
+            (*self.region_start.byte_add(index / 8).as_ptr()).set_bit(index % 8, value);
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn get_page(&self, index: usize) -> NonNull<u8> {
         unsafe { self.region_start.byte_add(index * MIN_PAGE_SIZE) }
     }
 
-    #[inline]
+    #[inline(always)]
     fn get_page_index_of(&self, ptr: *mut u8) -> usize {
         (ptr.addr() - self.region_start.addr().get()).div_ceil(MIN_PAGE_SIZE)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn contains(&self, address: usize) -> bool {
         unsafe {
             address > self.region_start.addr().get()
@@ -109,6 +97,7 @@ impl PageAllocator {
         core::ptr::null_mut()
     }
 
+    #[inline]
     pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let needed_page_count = layout.size().div_ceil(MIN_PAGE_SIZE);
         let page_index = self.get_page_index_of(ptr);
