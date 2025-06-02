@@ -104,32 +104,39 @@ pub struct Madt {
 
 impl Madt {
     pub fn get_ioapic_base(&self) -> usize {
-        let mut pointer = self as *const _ as usize;
+        let mut madt = self as *const _ as usize;
 
-        pointer += size_of::<Madt>();
+        madt += size_of::<Madt>();
 
         loop {
             unsafe {
-                let raw_pointer = pointer as *const u8;
+                let madt_entry_pointer = madt as *const u8;
+                let madt_entry_type = *madt_entry_pointer;
+                let madt_entry_length = (*madt_entry_pointer.add(1)) as usize;
 
-                if *raw_pointer == 1 {
-                    let ioapic_base = u32::from_le_bytes([
-                        *raw_pointer.add(4),
-                        *raw_pointer.add(5),
-                        *raw_pointer.add(6),
-                        *raw_pointer.add(7),
+                if madt_entry_type == 1 {
+                    let ioapic_phys_base = u32::from_le_bytes([
+                        *madt_entry_pointer.add(4),
+                        *madt_entry_pointer.add(5),
+                        *madt_entry_pointer.add(6),
+                        *madt_entry_pointer.add(7),
                     ]) as usize;
 
+                    let ioapic_virt_base = paging::offset(ioapic_phys_base);
+
                     paging::get_active_table()
-                        .map(page_align_down(ioapic_base), page_align_down(ioapic_base))
+                        .map(
+                            page_align_down(ioapic_virt_base),
+                            page_align_down(ioapic_phys_base),
+                        )
                         .set_writable(true)
                         .set_write_through(true)
                         .set_cachability(false);
 
-                    return ioapic_base;
-                } else {
-                    pointer += (*raw_pointer.add(1)) as usize;
+                    return ioapic_virt_base;
                 }
+
+                madt += madt_entry_length;
             }
         }
     }
@@ -165,12 +172,12 @@ fn unmap_object<T>(page_table: &mut PageTable, object: &'static T) {
 
 fn map_object<T>(page_table: &mut PageTable, phys: usize) -> &'static T {
     let mut aligned_phys = page_align_down(phys);
+    let aligned_phys_end = page_align_up(phys + size_of::<T>());
 
-    let virt = phys;
-    let mut aligned_virt = aligned_phys;
-    let aligned_virt_end = page_align_up(virt + size_of::<T>());
+    let virt = paging::offset(phys);
+    let mut aligned_virt = page_align_down(virt);
 
-    while aligned_virt < aligned_virt_end {
+    while aligned_phys < aligned_phys_end {
         page_table.map(aligned_virt, aligned_phys);
 
         aligned_virt += MIN_PAGE_SIZE;
