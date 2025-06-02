@@ -1,5 +1,5 @@
 use core::{
-    alloc::Layout,
+    alloc::{GlobalAlloc, Layout},
     arch::asm,
     ops::{Deref, Index, IndexMut},
 };
@@ -88,7 +88,7 @@ impl PageTable {
             let entry = &mut table[index];
 
             if !entry.is_present() {
-                let new_table_virt = PAGE_ALLOCATOR.lock().alloc(Layout::new::<PageTable>());
+                let new_table_virt = unsafe { PAGE_ALLOCATOR.alloc(Layout::new::<PageTable>()) };
 
                 unsafe {
                     new_table_virt.cast::<PageTable>().write(PageTable::empty());

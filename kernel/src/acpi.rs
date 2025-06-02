@@ -198,14 +198,14 @@ lazy_static! {
 
         let rsdp: &Rsdp = map_object(active_table, rsdp_address);
 
-        if &rsdp.signature != "RSD PTR ".as_bytes() {
+        if rsdp.signature != "RSD PTR ".as_bytes() {
             panic!("bad rsdp signature");
         }
 
         match rsdp.revision {
             0 => {
                 let rsdp_checksum: usize =
-                    core::mem::transmute::<_, &[u8; size_of::<Rsdp>()]>(&*rsdp)
+                    core::mem::transmute::<&Rsdp, &[u8; size_of::<Rsdp>()]>(rsdp)
                         .iter()
                         .map(|&x| x as usize)
                         .sum();
@@ -231,7 +231,7 @@ lazy_static! {
 
                     let rsdt_entry_signature = sdt_header.signature;
 
-                    if &rsdt_entry_signature == "FACP".as_bytes() {
+                    if rsdt_entry_signature == "FACP".as_bytes() {
                         fadt = Some({
                             let fadt: &Fadt = map_object(active_table, rsdt_entry);
 
@@ -240,7 +240,7 @@ lazy_static! {
                             dsdt = Some({
                                 let dsdt: &Dsdt = map_object(active_table, dsdt_address);
 
-                                if &dsdt.header.signature != "DSDT".as_bytes() {
+                                if dsdt.header.signature != "DSDT".as_bytes() {
                                     panic!("bad dsdt signature");
                                 }
 
@@ -249,7 +249,7 @@ lazy_static! {
 
                             fadt
                         });
-                    } else if &rsdt_entry_signature == "APIC".as_bytes() {
+                    } else if rsdt_entry_signature == "APIC".as_bytes() {
                         madt = Some(map_object(active_table, rsdt_entry));
                     }
                 }

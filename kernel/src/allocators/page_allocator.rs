@@ -1,33 +1,37 @@
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    cmp::Ordering,
-    ops::Deref,
-    ptr::NonNull,
-};
+use core::{alloc::Layout, cmp::Ordering, ptr::NonNull};
 
 use bit_field::BitField;
-use spin::{lazy::Lazy, mutex::Mutex};
 
 use crate::paging::MIN_PAGE_SIZE;
 
+#[derive(Clone, Copy)]
 pub struct PageAllocator {
-    heap_start: NonNull<u8>,
-    page_count: usize,
+    region_start: NonNull<u8>,
+    pub page_count: usize,
 }
 
 impl PageAllocator {
-    pub fn new(heap_start: NonNull<u8>, heap_len: usize) -> PageAllocator {
-        // We intentionally use integer division to not overflow the heap
-        let page_count = heap_len / MIN_PAGE_SIZE;
+    pub fn new(region_start: NonNull<u8>, region_len: usize) -> PageAllocator {
+        // We intentionally use integer division to not overflow the region
+        let page_count = region_len / MIN_PAGE_SIZE;
 
         let page_allocator = PageAllocator {
-            heap_start,
+            region_start,
             page_count,
         };
 
         page_allocator.reserve_bitmap_pages();
 
         page_allocator
+    }
+
+    /// Checks whether a region can be used for page allocation
+    #[inline]
+    pub fn can_be_used(region_len: usize) -> bool {
+        region_len
+            > (region_len / MIN_PAGE_SIZE)
+                .div_ceil(8)
+                .div_ceil(MIN_PAGE_SIZE)
     }
 
     fn reserve_bitmap_pages(&self) {
@@ -43,15 +47,9 @@ impl PageAllocator {
     }
 
     pub fn calculate_free_space(&self) -> usize {
-        let mut amount = 0;
-
-        for i in 0..self.page_count {
-            if self.is_free(i) {
-                amount += MIN_PAGE_SIZE;
-            }
-        }
-
-        amount
+        (0..self.page_count)
+            .filter_map(|i| self.is_free(i).then_some(MIN_PAGE_SIZE))
+            .sum()
     }
 
     #[inline]
@@ -59,7 +57,7 @@ impl PageAllocator {
         let byte_index = index / 8;
         let bit_index = index % 8;
 
-        unsafe { (*self.heap_start.byte_add(byte_index).as_ptr()).get_bit(bit_index) }
+        unsafe { (*self.region_start.byte_add(byte_index).as_ptr()).get_bit(bit_index) }
     }
 
     #[inline]
@@ -68,27 +66,27 @@ impl PageAllocator {
         let bit_index = index % 8;
 
         unsafe {
-            (*self.heap_start.byte_add(byte_index).as_ptr()).set_bit(bit_index, value);
+            (*self.region_start.byte_add(byte_index).as_ptr()).set_bit(bit_index, value);
         }
     }
 
     #[inline]
     fn get_page(&self, index: usize) -> NonNull<u8> {
-        unsafe { self.heap_start.byte_add(index * MIN_PAGE_SIZE) }
+        unsafe { self.region_start.byte_add(index * MIN_PAGE_SIZE) }
     }
 
     #[inline]
     fn get_page_index_of(&self, ptr: *mut u8) -> usize {
-        (ptr.addr() - self.heap_start.addr().get()).div_ceil(MIN_PAGE_SIZE)
+        (ptr.addr() - self.region_start.addr().get()).div_ceil(MIN_PAGE_SIZE)
     }
 
     #[inline]
     pub fn contains(&self, address: usize) -> bool {
         unsafe {
-            address > self.heap_start.addr().get()
+            address > self.region_start.addr().get()
                 && address
                     < self
-                        .heap_start
+                        .region_start
                         .byte_add(self.page_count * MIN_PAGE_SIZE)
                         .addr()
                         .get()
@@ -99,24 +97,12 @@ impl PageAllocator {
         let needed_page_count = layout.size().div_ceil(MIN_PAGE_SIZE);
 
         for page_index in 0..self.page_count {
-            if self.is_free(page_index) {
-                let mut fits = true;
+            let page_indices = page_index..(page_index + needed_page_count);
 
-                for i in page_index..(page_index + needed_page_count) {
-                    if !self.is_free(i) {
-                        fits = false;
+            if page_indices.clone().all(|i| self.is_free(i)) {
+                page_indices.for_each(|i| self.set_free_bit(i, false));
 
-                        break;
-                    }
-                }
-
-                if fits {
-                    for i in page_index..(page_index + needed_page_count) {
-                        self.set_free_bit(i, false);
-                    }
-
-                    return self.get_page(page_index).as_ptr();
-                }
+                return self.get_page(page_index).as_ptr();
             }
         }
 
@@ -125,34 +111,31 @@ impl PageAllocator {
 
     pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let needed_page_count = layout.size().div_ceil(MIN_PAGE_SIZE);
-
         let page_index = self.get_page_index_of(ptr);
-
-        for i in page_index..(page_index + needed_page_count) {
-            self.set_free_bit(i, true);
-        }
-
-        println!("deallocated {needed_page_count} pages");
+        let page_indices = page_index..(page_index + needed_page_count);
+        page_indices.for_each(|i| self.set_free_bit(i, true));
     }
 
-    pub fn resize(&self, old_ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+    /// Tries to resize the allocation without reallocating, returns whether the resize is
+    /// successful, otherwise an allocation must be done
+    pub fn resize(&self, old_ptr: *mut u8, layout: Layout, new_size: usize) -> bool {
         let old_needed_page_count = layout.size().div_ceil(MIN_PAGE_SIZE);
         let new_needed_page_count = new_size.div_ceil(MIN_PAGE_SIZE);
 
         match new_needed_page_count.cmp(&old_needed_page_count) {
             // We shouldn't reallocate with the same page count
-            Ordering::Equal => old_ptr,
+            Ordering::Equal => true,
 
             // And if we are shrinking the page count, we should free the excess pages
             Ordering::Less => {
                 let page_index = self.get_page_index_of(old_ptr);
 
-                for i in (page_index + new_needed_page_count)..(page_index + old_needed_page_count)
-                {
-                    self.set_free_bit(i, true);
-                }
+                let page_indices =
+                    (page_index + old_needed_page_count)..(page_index + new_needed_page_count);
 
-                old_ptr
+                page_indices.for_each(|i| self.set_free_bit(i, true));
+
+                true
             }
 
             // Lastly, growing the page count requires us to check if there is some excess pages
@@ -160,72 +143,19 @@ impl PageAllocator {
             Ordering::Greater => {
                 let page_index = self.get_page_index_of(old_ptr);
 
-                let mut fits = true;
+                let page_indices =
+                    (page_index + old_needed_page_count)..(page_index + new_needed_page_count);
 
-                for i in (page_index + old_needed_page_count)..(page_index + new_needed_page_count)
-                {
-                    if !self.is_free(i) {
-                        fits = false;
-
-                        break;
-                    }
-                }
-
-                if fits {
+                if page_indices.clone().all(|i| self.is_free(i)) {
                     // We can expand our memory :)
-                    for i in
-                        (page_index + old_needed_page_count)..(page_index + new_needed_page_count)
-                    {
-                        self.set_free_bit(i, false);
-                    }
+                    page_indices.for_each(|i| self.set_free_bit(i, false));
 
-                    old_ptr
+                    true
                 } else {
                     // We must reallocate :(
-                    let new_layout =
-                        unsafe { Layout::from_size_align_unchecked(new_size, layout.align()) };
-
-                    let new_ptr = self.alloc(new_layout);
-
-                    if !new_ptr.is_null() {
-                        unsafe {
-                            core::ptr::copy_nonoverlapping(old_ptr, new_ptr, new_size);
-                        }
-
-                        self.dealloc(old_ptr, layout);
-                    }
-
-                    new_ptr
+                    false
                 }
             }
         }
-    }
-}
-
-#[repr(transparent)]
-pub struct LockedPageAllocator(pub Lazy<Mutex<PageAllocator>>);
-
-unsafe impl Send for LockedPageAllocator {}
-unsafe impl Sync for LockedPageAllocator {}
-
-unsafe impl GlobalAlloc for LockedPageAllocator {
-    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
-        self.lock().alloc(layout)
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        self.lock().dealloc(ptr, layout);
-    }
-
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        self.lock().resize(ptr, layout, new_size)
-    }
-}
-
-impl Deref for LockedPageAllocator {
-    type Target = Lazy<Mutex<PageAllocator>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
