@@ -18,15 +18,15 @@ impl IoApic {
 
     fn reg_read(&self, index: u32) -> u32 {
         unsafe {
-            *(self.base as *mut u32) = index;
-            return *((self.base + 0x10) as *const u32);
+            (self.base as *mut u32).write_volatile(index);
+            ((self.base + 0x10) as *const u32).read_volatile()
         }
     }
 
     fn reg_write(&self, index: u32, value: u32) {
         unsafe {
-            *(self.base as *mut u32) = index;
-            *((self.base + 0x10) as *mut u32) = value;
+            (self.base as *mut u32).write_volatile(index);
+            ((self.base + 0x10) as *mut u32).write_volatile(value);
         }
     }
 
@@ -43,17 +43,17 @@ impl IoApic {
     }
 
     pub fn irq_enable(&self, ioapic_irq: u32) {
-        let irq_reg = 0x10 + (2 * ioapic_irq as u32);
+        let irq_reg = 0x10 + (2 * ioapic_irq);
         self.reg_write(irq_reg, self.reg_read(irq_reg) & !(1 << 16));
     }
 
     pub fn irq_disable(&self, ioapic_irq: u32) {
-        let irq_reg = 0x10 + (2 * ioapic_irq as u32);
+        let irq_reg = 0x10 + (2 * ioapic_irq);
         self.reg_write(irq_reg, self.reg_read(irq_reg) | (1 << 16));
     }
 
     pub fn irq_set(&self, ioapic_irq: u32, lapic_id: u32, irq_vector: u32) {
-        let low_reg = 0x10 + (2 * ioapic_irq as u32);
+        let low_reg = 0x10 + (2 * ioapic_irq);
         let high_reg = low_reg + 1;
 
         let mut low = self.reg_read(low_reg);
