@@ -145,7 +145,13 @@ impl PageTable {
 
         let entry = &mut table[indices.p1_index];
 
+        let was_present = entry.is_present();
+
         entry.set_present(false);
+
+        if was_present {
+            unsafe { asm!("invlpg [{}]", in(reg) virt, options(preserves_flags)) }
+        }
     }
 }
 
