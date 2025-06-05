@@ -33,7 +33,9 @@ extern "C" fn init_bsp() -> ! {
 
     mp::boot_cpus();
 
-    arch::halt();
+    loop {
+        arch::interrupts::wait_for_interrupts();
+    }
 }
 
 /// Initialize appication processor (the entry point which `mp::boot_cpus` directs the application
@@ -41,5 +43,7 @@ extern "C" fn init_bsp() -> ! {
 extern "C" fn init_ap(cpu: &Cpu) -> ! {
     arch::init_ap(cpu);
 
-    arch::halt();
+    loop {
+        arch::interrupts::wait_for_interrupts();
+    }
 }

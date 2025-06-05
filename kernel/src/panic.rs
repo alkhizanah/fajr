@@ -40,5 +40,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
 
     arch::interrupts::disable();
 
-    arch::halt();
+    loop {
+        arch::interrupts::wait_for_interrupts();
+    }
 }
