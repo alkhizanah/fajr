@@ -308,7 +308,7 @@ impl Entry {
     /// the TLB on an address space switch.
     #[inline]
     pub fn set_global(&mut self, is_global: bool) -> &mut Self {
-        self.0.set_bit(7, is_global);
+        self.0.set_bit(8, is_global);
         self
     }
 
