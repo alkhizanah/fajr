@@ -1,3 +1,9 @@
+use core::arch::asm;
+
+use lazy_static::lazy_static;
+
+use crate::mp::MAX_CPU_COUNT;
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed(4))]
 pub struct TaskStateSegment {
@@ -27,5 +33,27 @@ impl TaskStateSegment {
 impl Default for TaskStateSegment {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+lazy_static! {
+    pub static ref TSS: [TaskStateSegment; MAX_CPU_COUNT] = {
+        let mut tss = [const { TaskStateSegment::new() }; MAX_CPU_COUNT];
+
+        for tss in tss.iter_mut() {
+            tss.interrupt_stack_table[0] = {
+                const IST_STACK_SIZE: usize = 20 * 1024;
+                static mut IST_STACK: [u8; IST_STACK_SIZE] = [0; IST_STACK_SIZE];
+                ((&raw const IST_STACK).addr() + IST_STACK_SIZE) as u64
+            };
+        }
+
+        tss
+    };
+}
+
+pub fn load(cpu_id: u32) {
+    unsafe {
+        asm!("ltr {0:x}", in(reg) (0x28 + (cpu_id * 16)), options(readonly, nostack, preserves_flags));
     }
 }

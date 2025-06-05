@@ -1,3 +1,5 @@
+use limine::mp::Cpu;
+
 pub mod gdt;
 pub mod idt;
 pub mod interrupts;
@@ -12,7 +14,14 @@ struct DescriptorTableRegister {
     address: u64,
 }
 
-pub fn init() {
-    gdt::init();
-    idt::init();
+pub fn init_bsp() {
+    gdt::load();
+    tss::load(0);
+    idt::load();
+}
+
+pub fn init_ap(cpu: &Cpu) {
+    gdt::load();
+    tss::load(cpu.id);
+    idt::load();
 }

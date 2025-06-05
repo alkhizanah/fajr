@@ -3,10 +3,12 @@ use core::arch::asm;
 use bit_field::BitField;
 use lazy_static::lazy_static;
 
+use crate::{arch::tss::TSS, mp::MAX_CPU_COUNT};
+
 use super::{DescriptorTableRegister, tss::TaskStateSegment};
 
 #[derive(Debug, PartialEq)]
-struct GlobalDescriptorTable<const MAX: usize = 8> {
+struct GlobalDescriptorTable<const MAX: usize = { 5 + (MAX_CPU_COUNT * 2) }> {
     table: [Entry; MAX],
     len: usize,
 }
@@ -156,20 +158,6 @@ impl Descriptor {
 }
 
 lazy_static! {
-    static ref TSS: TaskStateSegment = {
-        let mut tss = TaskStateSegment::new();
-
-        tss.interrupt_stack_table[0] = {
-            const IST_STACK_SIZE: usize = 20 * 1024;
-            static mut IST_STACK: [u8; IST_STACK_SIZE] = [0; IST_STACK_SIZE];
-            ((&raw const IST_STACK).addr() + IST_STACK_SIZE) as u64
-        };
-
-        tss
-    };
-}
-
-lazy_static! {
     static ref GDT: GlobalDescriptorTable = {
         let mut gdt = GlobalDescriptorTable::empty();
 
@@ -177,13 +165,16 @@ lazy_static! {
         gdt.push(Descriptor::kernel_data_segment()); // 0x10
         gdt.push(Descriptor::user_code_segment()); // 0x18
         gdt.push(Descriptor::user_data_segment()); // 0x20
-        gdt.push(Descriptor::task_state_segment(&TSS)); // 0x28
+
+        for cpu_id in 0..MAX_CPU_COUNT {
+            gdt.push(Descriptor::task_state_segment(&TSS[cpu_id])); // 0x28 + (cpu_id * 16)
+        }
 
         gdt
     };
 }
 
-pub fn init() {
+pub fn load() {
     unsafe {
         asm!("lgdt [{}]", in(reg) &GDT.register(), options(readonly, nostack, preserves_flags));
 
@@ -206,7 +197,5 @@ pub fn init() {
             },
             options(preserves_flags)
         );
-
-        asm!("ltr {0:x}", in(reg) 0x28, options(readonly, nostack, preserves_flags));
     }
 }

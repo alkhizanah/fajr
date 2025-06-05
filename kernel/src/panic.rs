@@ -1,9 +1,6 @@
 use core::fmt::Write;
 
-use crate::arch::endless_loop;
-use crate::console::CONSOLE;
-use crate::requests::FRAMEBUFFER_REQUEST;
-use crate::screen::Color;
+use crate::{arch, console::CONSOLE, requests::FRAMEBUFFER_REQUEST, screen::Color};
 
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
@@ -41,5 +38,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
         let _ = writeln!(&mut console, "Panic message: {}", info.message());
     }
 
-    endless_loop();
+    arch::interrupts::disable();
+
+    arch::halt();
 }

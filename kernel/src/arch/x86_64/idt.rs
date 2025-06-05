@@ -132,7 +132,7 @@ lazy_static! {
     };
 }
 
-pub fn init() {
+pub fn load() {
     unsafe {
         asm!("lidt [{}]", in(reg) &IDT.register(), options(readonly, nostack, preserves_flags));
     }

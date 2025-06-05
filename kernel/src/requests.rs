@@ -1,8 +1,12 @@
-use limine::BaseRevision;
-use limine::request::{
-    FramebufferRequest, HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker,
-    RsdpRequest,
+use limine::{
+    BaseRevision,
+    request::{
+        FramebufferRequest, HhdmRequest, MemoryMapRequest, MpRequest, RequestsEndMarker,
+        RequestsStartMarker, RsdpRequest,
+    },
 };
+
+use spin::Mutex;
 
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]
@@ -27,6 +31,10 @@ pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MP_REQUEST: Mutex<MpRequest> = Mutex::new(MpRequest::new());
 
 #[used]
 #[unsafe(link_section = ".requests_end_marker")]

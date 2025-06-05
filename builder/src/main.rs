@@ -255,10 +255,12 @@ pub fn main() {
         if bios {
             if iso {
                 exec(format!(
-                    "{qemu_program} -m 4G -M q35 -cdrom {image_path} -boot d"
+                    "{qemu_program} -m 4G -M q35 -cdrom {image_path} -boot d -smp 2"
                 ));
             } else {
-                exec(format!("{qemu_program} -m 4G -M q35 -hda {image_path}"));
+                exec(format!(
+                    "{qemu_program} -m 4G -M q35 -hda {image_path} -smp 2"
+                ));
             }
         } else {
             exec(format!(

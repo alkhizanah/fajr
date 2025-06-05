@@ -141,8 +141,7 @@ macro_rules! println {
     };
 
     ($($arg:tt)*) => {{
-        $crate::console::_print(core::format_args!($($arg)*));
-        $crate::print!("\n");
+        $crate::console::_println(core::format_args!($($arg)*));
     }};
 }
 
@@ -153,4 +152,11 @@ lazy_static! {
 #[allow(static_mut_refs)]
 pub fn _print(args: fmt::Arguments) {
     CONSOLE.lock().write_fmt(args).unwrap();
+}
+
+#[allow(static_mut_refs)]
+pub fn _println(args: fmt::Arguments) {
+    let mut console = CONSOLE.lock();
+    console.write_fmt(args).unwrap();
+    console.write_char('\n').unwrap();
 }
