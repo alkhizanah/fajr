@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 
 use crate::{
-    memory::{align_down, align_up},
+    memory::{self, align_down},
     paging::{self, MIN_PAGE_SIZE},
     requests::RSDP_REQUEST,
 };
@@ -150,41 +150,6 @@ pub struct Acpi<'a> {
     pub madt: Option<&'a Madt>,
 }
 
-fn unmap<T>(object: &'static T) {
-    let virt = object as *const _ as usize;
-
-    let mut aligned_virt = align_down(virt, MIN_PAGE_SIZE);
-    let aligned_virt_end = align_up(virt + size_of::<T>(), MIN_PAGE_SIZE);
-
-    let page_table = paging::get_active_table();
-
-    while aligned_virt < aligned_virt_end {
-        page_table.unmap(aligned_virt);
-
-        aligned_virt += MIN_PAGE_SIZE;
-    }
-}
-
-fn map<T>(phys: usize) -> &'static T {
-    let mut aligned_phys = align_down(phys, MIN_PAGE_SIZE);
-
-    let virt = paging::offset(phys);
-
-    let mut aligned_virt = align_down(virt, MIN_PAGE_SIZE);
-    let aligned_virt_end = align_up(virt + size_of::<T>(), MIN_PAGE_SIZE);
-
-    let page_table = paging::get_active_table();
-
-    while aligned_virt < aligned_virt_end {
-        page_table.map(aligned_virt, aligned_phys);
-
-        aligned_virt += MIN_PAGE_SIZE;
-        aligned_phys += MIN_PAGE_SIZE;
-    }
-
-    unsafe { &*(virt as *const _) }
-}
-
 lazy_static! {
     pub static ref ACPI: Acpi<'static> = unsafe {
         let rsdp_address = RSDP_REQUEST
@@ -192,7 +157,7 @@ lazy_static! {
             .expect("could not ask limine to get rsdp")
             .address();
 
-        let rsdp = map::<Rsdp>(rsdp_address);
+        let rsdp = memory::map::<Rsdp>(rsdp_address);
 
         if rsdp.signature != "RSD PTR ".as_bytes() {
             panic!("bad rsdp signature");
@@ -212,7 +177,7 @@ lazy_static! {
 
                 let rsdt_address = rsdp.rsdt_address as usize;
 
-                let rsdt = map::<Rsdt>(rsdt_address);
+                let rsdt = memory::map::<Rsdt>(rsdt_address);
 
                 let mut fadt = None;
                 let mut dsdt = None;
@@ -223,18 +188,18 @@ lazy_static! {
                 for i in 0..rsdt_entry_count {
                     let rsdt_entry = rsdt.entries[i] as usize;
 
-                    let sdt_header = map::<SdtHeader>(rsdt_entry);
+                    let sdt_header = memory::map::<SdtHeader>(rsdt_entry);
 
                     let rsdt_entry_signature = sdt_header.signature;
 
                     if rsdt_entry_signature == "FACP".as_bytes() {
                         fadt = Some({
-                            let fadt = map::<Fadt>(rsdt_entry);
+                            let fadt = memory::map::<Fadt>(rsdt_entry);
 
                             let dsdt_address = fadt.dsdt as usize;
 
                             dsdt = Some({
-                                let dsdt = map::<Dsdt>(dsdt_address);
+                                let dsdt = memory::map::<Dsdt>(dsdt_address);
 
                                 if dsdt.header.signature != "DSDT".as_bytes() {
                                     panic!("bad dsdt signature");
@@ -246,11 +211,11 @@ lazy_static! {
                             fadt
                         });
                     } else if rsdt_entry_signature == "APIC".as_bytes() {
-                        madt = Some(map(rsdt_entry));
+                        madt = Some(memory::map(rsdt_entry));
                     }
                 }
 
-                unmap(rsdp);
+                memory::unmap(rsdp);
 
                 Acpi {
                     rsdt,

@@ -7,7 +7,7 @@ use core::{
 use limine::memory_map::EntryType as MemoryEntryType;
 use spin::{Lazy, Mutex};
 
-use crate::{allocators::page_allocator::PageAllocator, paging, requests::MEMORY_MAP_REQUEST};
+use crate::{allocators::page_allocator::PageAllocator, paging::{self, MIN_PAGE_SIZE}, requests::MEMORY_MAP_REQUEST};
 
 const MAX_REGION_COUNT: usize = 128;
 
@@ -142,3 +142,39 @@ pub fn align_up(address: usize, alignment: usize) -> usize {
 pub fn align_down(address: usize, alignment: usize) -> usize {
     address - (address % alignment)
 }
+
+pub fn unmap<T>(object: &T) {
+    let virt = object as *const _ as usize;
+
+    let mut aligned_virt = align_down(virt, MIN_PAGE_SIZE);
+    let aligned_virt_end = align_up(virt + size_of::<T>(), MIN_PAGE_SIZE);
+
+    let page_table = paging::get_active_table();
+
+    while aligned_virt < aligned_virt_end {
+        page_table.unmap(aligned_virt);
+
+        aligned_virt += MIN_PAGE_SIZE;
+    }
+}
+
+pub fn map<'a, T>(phys: usize) -> &'a T {
+    let mut aligned_phys = align_down(phys, MIN_PAGE_SIZE);
+
+    let virt = paging::offset(phys);
+
+    let mut aligned_virt = align_down(virt, MIN_PAGE_SIZE);
+    let aligned_virt_end = align_up(virt + size_of::<T>(), MIN_PAGE_SIZE);
+
+    let page_table = paging::get_active_table();
+
+    while aligned_virt < aligned_virt_end {
+        page_table.map(aligned_virt, aligned_phys);
+
+        aligned_virt += MIN_PAGE_SIZE;
+        aligned_phys += MIN_PAGE_SIZE;
+    }
+
+    unsafe { &*(virt as *const _) }
+}
+
