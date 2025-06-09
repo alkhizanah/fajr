@@ -134,3 +134,11 @@ pub static PAGE_ALLOCATOR: ChainedPageAllocators = ChainedPageAllocators(Lazy::n
         page_allocators
     })
 }));
+
+pub fn align_up(address: usize, alignment: usize) -> usize {
+    address + (alignment - (address % alignment))
+}
+
+pub fn align_down(address: usize, alignment: usize) -> usize {
+    address - (address % alignment)
+}

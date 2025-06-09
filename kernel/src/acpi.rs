@@ -1,7 +1,8 @@
 use lazy_static::lazy_static;
 
 use crate::{
-    paging::{self, MIN_PAGE_SIZE, PageTable},
+    memory::{align_down, align_up},
+    paging::{self, MIN_PAGE_SIZE},
     requests::RSDP_REQUEST,
 };
 
@@ -126,8 +127,8 @@ impl Madt {
 
                     paging::get_active_table()
                         .map(
-                            page_align_down(ioapic_virt_base),
-                            page_align_down(ioapic_phys_base),
+                            align_down(ioapic_virt_base, MIN_PAGE_SIZE),
+                            align_down(ioapic_phys_base, MIN_PAGE_SIZE),
                         )
                         .set_writable(true)
                         .set_write_through(true)
@@ -149,19 +150,13 @@ pub struct Acpi<'a> {
     pub madt: Option<&'a Madt>,
 }
 
-fn page_align_down(address: usize) -> usize {
-    address - (address % MIN_PAGE_SIZE)
-}
-
-fn page_align_up(address: usize) -> usize {
-    address + (MIN_PAGE_SIZE - (address % MIN_PAGE_SIZE))
-}
-
-fn unmap_object<T>(page_table: &mut PageTable, object: &'static T) {
+fn unmap<T>(object: &'static T) {
     let virt = object as *const _ as usize;
 
-    let mut aligned_virt = page_align_down(virt);
-    let aligned_virt_end = page_align_up(virt + size_of::<T>());
+    let mut aligned_virt = align_down(virt, MIN_PAGE_SIZE);
+    let aligned_virt_end = align_up(virt + size_of::<T>(), MIN_PAGE_SIZE);
+
+    let page_table = paging::get_active_table();
 
     while aligned_virt < aligned_virt_end {
         page_table.unmap(aligned_virt);
@@ -170,14 +165,17 @@ fn unmap_object<T>(page_table: &mut PageTable, object: &'static T) {
     }
 }
 
-fn map_object<T>(page_table: &mut PageTable, phys: usize) -> &'static T {
-    let mut aligned_phys = page_align_down(phys);
-    let aligned_phys_end = page_align_up(phys + size_of::<T>());
+fn map<T>(phys: usize) -> &'static T {
+    let mut aligned_phys = align_down(phys, MIN_PAGE_SIZE);
 
     let virt = paging::offset(phys);
-    let mut aligned_virt = page_align_down(virt);
 
-    while aligned_phys < aligned_phys_end {
+    let mut aligned_virt = align_down(virt, MIN_PAGE_SIZE);
+    let aligned_virt_end = align_up(virt + size_of::<T>(), MIN_PAGE_SIZE);
+
+    let page_table = paging::get_active_table();
+
+    while aligned_virt < aligned_virt_end {
         page_table.map(aligned_virt, aligned_phys);
 
         aligned_virt += MIN_PAGE_SIZE;
@@ -189,14 +187,12 @@ fn map_object<T>(page_table: &mut PageTable, phys: usize) -> &'static T {
 
 lazy_static! {
     pub static ref ACPI: Acpi<'static> = unsafe {
-        let active_table = paging::get_active_table();
-
         let rsdp_address = RSDP_REQUEST
             .get_response()
             .expect("could not ask limine to get rsdp")
             .address();
 
-        let rsdp: &Rsdp = map_object(active_table, rsdp_address);
+        let rsdp = map::<Rsdp>(rsdp_address);
 
         if rsdp.signature != "RSD PTR ".as_bytes() {
             panic!("bad rsdp signature");
@@ -216,7 +212,7 @@ lazy_static! {
 
                 let rsdt_address = rsdp.rsdt_address as usize;
 
-                let rsdt: &Rsdt = map_object(active_table, rsdt_address);
+                let rsdt = map::<Rsdt>(rsdt_address);
 
                 let mut fadt = None;
                 let mut dsdt = None;
@@ -227,18 +223,18 @@ lazy_static! {
                 for i in 0..rsdt_entry_count {
                     let rsdt_entry = rsdt.entries[i] as usize;
 
-                    let sdt_header: &SdtHeader = map_object(active_table, rsdt_entry);
+                    let sdt_header = map::<SdtHeader>(rsdt_entry);
 
                     let rsdt_entry_signature = sdt_header.signature;
 
                     if rsdt_entry_signature == "FACP".as_bytes() {
                         fadt = Some({
-                            let fadt: &Fadt = map_object(active_table, rsdt_entry);
+                            let fadt = map::<Fadt>(rsdt_entry);
 
                             let dsdt_address = fadt.dsdt as usize;
 
                             dsdt = Some({
-                                let dsdt: &Dsdt = map_object(active_table, dsdt_address);
+                                let dsdt = map::<Dsdt>(dsdt_address);
 
                                 if dsdt.header.signature != "DSDT".as_bytes() {
                                     panic!("bad dsdt signature");
@@ -250,11 +246,11 @@ lazy_static! {
                             fadt
                         });
                     } else if rsdt_entry_signature == "APIC".as_bytes() {
-                        madt = Some(map_object(active_table, rsdt_entry));
+                        madt = Some(map(rsdt_entry));
                     }
                 }
 
-                unmap_object(active_table, rsdp);
+                unmap(rsdp);
 
                 Acpi {
                     rsdt,
