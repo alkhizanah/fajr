@@ -1,10 +1,6 @@
 use lazy_static::lazy_static;
 
-use crate::{
-    memory::{self, align_down},
-    paging::{self, MIN_PAGE_SIZE},
-    requests::RSDP_REQUEST,
-};
+use crate::{memory, requests::RSDP_REQUEST};
 
 /// System Description Table Header
 #[repr(C, packed)]
@@ -104,42 +100,54 @@ pub struct Madt {
 }
 
 impl Madt {
-    pub fn get_ioapic_base(&self) -> usize {
-        let mut madt = self as *const _ as usize;
+    pub fn io_apic_iter(&self) -> IoApicIterator {
+        unsafe {
+            let start_pointer = (self as *const Madt).cast::<u8>();
 
-        madt += size_of::<Madt>();
-
-        loop {
-            unsafe {
-                let madt_entry_pointer = madt as *const u8;
-                let madt_entry_type = *madt_entry_pointer;
-                let madt_entry_length = (*madt_entry_pointer.add(1)) as usize;
-
-                if madt_entry_type == 1 {
-                    let ioapic_phys_base = u32::from_le_bytes([
-                        *madt_entry_pointer.add(4),
-                        *madt_entry_pointer.add(5),
-                        *madt_entry_pointer.add(6),
-                        *madt_entry_pointer.add(7),
-                    ]) as usize;
-
-                    let ioapic_virt_base = paging::offset(ioapic_phys_base);
-
-                    paging::get_active_table()
-                        .map(
-                            align_down(ioapic_virt_base, MIN_PAGE_SIZE),
-                            align_down(ioapic_phys_base, MIN_PAGE_SIZE),
-                        )
-                        .set_writable(true)
-                        .set_write_through(true)
-                        .set_cachability(false);
-
-                    return ioapic_virt_base;
-                }
-
-                madt += madt_entry_length;
+            IoApicIterator {
+                entry_pointer: start_pointer.byte_add(size_of::<Madt>()),
+                end_pointer: start_pointer.byte_add(self.header.length as usize),
             }
         }
+    }
+}
+
+pub struct IoApicIterator {
+    entry_pointer: *const u8,
+    end_pointer: *const u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+pub struct IoApicEntry {
+    pub id: u8,
+    reserved: u8,
+    pub physical_address: u32,
+    pub gloabl_system_interrupt_base: u32,
+}
+
+impl Iterator for IoApicIterator {
+    type Item = IoApicEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.entry_pointer < self.end_pointer {
+            unsafe {
+                let entry_type = *self.entry_pointer;
+                let entry_length = (*self.entry_pointer.byte_add(1)) as usize;
+
+                if entry_type == 1 {
+                    let io_apic_entry = *self.entry_pointer.byte_add(2).cast::<IoApicEntry>();
+
+                    self.entry_pointer = self.entry_pointer.byte_add(entry_length);
+
+                    return Some(io_apic_entry);
+                }
+
+                self.entry_pointer = self.entry_pointer.byte_add(entry_length);
+            }
+        }
+
+        None
     }
 }
 
