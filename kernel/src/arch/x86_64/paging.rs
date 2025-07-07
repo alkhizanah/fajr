@@ -9,6 +9,7 @@ use bit_field::BitField;
 use crate::{memory::PAGE_ALLOCATOR, paging};
 
 const TABLE_ENTRY_COUNT: usize = 512;
+
 pub const MIN_PAGE_SIZE: usize = 4096;
 
 #[derive(Debug, Clone)]

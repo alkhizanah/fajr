@@ -41,7 +41,7 @@ extern "C" fn init_bsp() -> ! {
 /// Initialize appication processor (the entry point which `mp::boot_cpus` directs the application
 /// processors into)
 extern "C" fn init_ap(cpu: &Cpu) -> ! {
-    arch::init_ap(cpu);
+    arch::init_ap(cpu.id);
 
     loop {
         arch::interrupts::wait_for_interrupts();

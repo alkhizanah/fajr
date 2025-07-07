@@ -1,5 +1,4 @@
-use alloc::vec::Vec;
-use lazy_static::lazy_static;
+use spin::Mutex;
 
 use crate::{
     acpi::ACPI,
@@ -7,14 +6,18 @@ use crate::{
     paging::{self, MIN_PAGE_SIZE},
 };
 
+pub const MAX_IO_APIC_COUNT: usize = 128;
+
+pub static IO_APIC_COUNT: Mutex<usize> = Mutex::new(0);
+
+pub static IO_APICS: Mutex<[IoApic; MAX_IO_APIC_COUNT]> =
+    Mutex::new([const { IoApic(0) }; MAX_IO_APIC_COUNT]);
+
+
 #[derive(Debug, Clone, Copy)]
 pub struct IoApic(usize);
 
 impl IoApic {
-    pub const fn new(address: usize) -> IoApic {
-        IoApic(address)
-    }
-
     fn read(&self, index: u32) -> u32 {
         unsafe {
             (self.0 as *mut u32).write_volatile(index);
@@ -77,32 +80,32 @@ impl IoApic {
     }
 }
 
-lazy_static! {
-    pub static ref IO_APICS: Vec<IoApic> = {
-        let mut io_apics = Vec::with_capacity(1);
+pub fn init() {
+    let madt = ACPI.madt.as_ref().expect("no I/O APICs found");
 
-        let madt = ACPI.madt.as_ref().expect("no I/O APIC is available");
+    let mut io_apics = IO_APICS.lock();
 
-        for io_apic_entry in madt.io_apic_iter() {
-            let io_apic_phys_addr = io_apic_entry.physical_address as usize;
-            let io_apic_virt_addr = paging::offset(io_apic_phys_addr);
+    let mut io_apic_count = IO_APIC_COUNT.lock();
 
-            paging::get_active_table()
-                .map(
-                    align_down(io_apic_virt_addr, MIN_PAGE_SIZE),
-                    align_down(io_apic_phys_addr, MIN_PAGE_SIZE),
-                )
-                .set_writable(true)
-                .set_write_through(true)
-                .set_cachability(false);
+    for io_apic_entry in madt.io_apic_iter().take(MAX_IO_APIC_COUNT) {
+        let io_apic_phys_addr = io_apic_entry.physical_address as usize;
+        let io_apic_virt_addr = paging::offset(io_apic_phys_addr);
 
-            io_apics.push(IoApic::new(io_apic_virt_addr));
-        }
+        paging::get_active_table()
+            .map(
+                align_down(io_apic_virt_addr, MIN_PAGE_SIZE),
+                align_down(io_apic_phys_addr, MIN_PAGE_SIZE),
+            )
+            .set_writable(true)
+            .set_write_through(true)
+            .set_cachability(false);
 
-        if io_apics.len() == 0 {
-            panic!("no I/O APIC is available");
-        }
+        io_apics[*io_apic_count].0 = io_apic_virt_addr;
 
-        io_apics
-    };
+        *io_apic_count += 1;
+    }
+
+    if *io_apic_count == 0 {
+        panic!("no I/O APICs found");
+    }
 }

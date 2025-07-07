@@ -82,8 +82,7 @@ pub struct Fadt {
     pub flags: u32,
     pub reset_reg: [u8; 12],
     pub reset_value: u8,
-    pub reserved_4: u16,
-    pub reserved_5: u8,
+    pub reserved_4: u16, pub reserved_5: u8,
 }
 
 /// Differentiated Description Table
@@ -123,7 +122,7 @@ pub struct IoApicEntry {
     pub id: u8,
     reserved: u8,
     pub physical_address: u32,
-    pub gloabl_system_interrupt_base: u32,
+    pub global_system_interrupt_base: u32,
 }
 
 impl Iterator for IoApicIterator {
