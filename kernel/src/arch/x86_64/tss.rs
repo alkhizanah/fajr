@@ -4,6 +4,8 @@ use lazy_static::lazy_static;
 
 use crate::mp::MAX_CPU_COUNT;
 
+use super::Cpu;
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed(4))]
 pub struct TaskStateSegment {
@@ -52,8 +54,10 @@ lazy_static! {
     };
 }
 
-pub fn load(cpu_id: u32) {
+pub fn load() {
+    let cpu = Cpu::get();
+
     unsafe {
-        asm!("ltr {0:x}", in(reg) (0x28 + (cpu_id * 16)), options(readonly, nostack, preserves_flags));
+        asm!("ltr {0:x}", in(reg) (0x28 + (cpu.id * 16)), options(readonly, nostack, preserves_flags));
     }
 }

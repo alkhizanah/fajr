@@ -1,11 +1,16 @@
+pub mod cpu;
 pub mod gdt;
 pub mod idt;
 pub mod interrupts;
 pub mod io_apic;
+pub mod io_ports;
 pub mod local_apic;
 pub mod msr;
 pub mod paging;
+pub mod pic;
 pub mod tss;
+
+use cpu::Cpu;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed(2))]
@@ -15,20 +20,21 @@ struct DescriptorTableRegister {
 }
 
 pub fn init_bsp() {
+    Cpu::set(Cpu::new(0));
+
     gdt::load();
-    tss::load(0);
+    tss::load();
     idt::load();
+    pic::disable();
     io_apic::init();
-    local_apic::init(0);
+    local_apic::init();
 }
 
 pub fn init_ap(cpu_id: u32) {
-    // We assume that the bootstrap processor is always with id 0, application processors
-    // should not have the same id
-    assert_ne!(cpu_id, 0);
+    Cpu::set(Cpu::new(cpu_id));
 
     gdt::load();
-    tss::load(cpu_id);
+    tss::load();
     idt::load();
-    local_apic::init(cpu_id);
+    local_apic::init();
 }

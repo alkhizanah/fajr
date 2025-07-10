@@ -2,8 +2,6 @@
 #![no_std]
 #![no_main]
 
-use limine::mp::Cpu;
-
 extern crate alloc;
 
 #[macro_use]
@@ -31,17 +29,16 @@ extern "C" fn init_bsp() -> ! {
 
     arch::init_bsp();
 
-    mp::boot_cpus();
+    mp::boot_ap();
 
     loop {
         arch::interrupts::wait_for_interrupts();
     }
 }
 
-/// Initialize appication processor (the entry point which `mp::boot_cpus` directs the application
-/// processors into)
-extern "C" fn init_ap(cpu: &Cpu) -> ! {
-    arch::init_ap(cpu.id);
+/// Initialize appication processor
+fn init_ap(cpu_id: u32) -> ! {
+    arch::init_ap(cpu_id);
 
     loop {
         arch::interrupts::wait_for_interrupts();

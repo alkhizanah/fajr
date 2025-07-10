@@ -3,6 +3,8 @@ use core::arch::asm;
 use bit_field::BitField;
 use lazy_static::lazy_static;
 
+use crate::arch::local_apic;
+
 use super::DescriptorTableRegister;
 
 #[derive(Debug, PartialEq)]
@@ -127,6 +129,7 @@ lazy_static! {
         idt.table[28].set_handler_address(handle_hypervisor_injection_exception as usize as u64);
         idt.table[29].set_handler_address(handle_vmm_communication_exception as usize as u64);
         idt.table[30].set_handler_address(handle_security_exception as usize as u64);
+        idt.table[32].set_handler_address(local_apic::handle_timer_tick as usize as u64);
 
         idt
     };
