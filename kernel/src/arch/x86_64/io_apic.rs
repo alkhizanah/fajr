@@ -13,7 +13,6 @@ pub static IO_APIC_COUNT: Mutex<usize> = Mutex::new(0);
 pub static IO_APICS: Mutex<[IoApic; MAX_IO_APIC_COUNT]> =
     Mutex::new([const { IoApic(0) }; MAX_IO_APIC_COUNT]);
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct IoApic(usize);
 

@@ -8,10 +8,10 @@ extern crate alloc;
 pub mod console;
 
 pub mod acpi;
-pub mod allocators;
 pub mod arch;
 pub mod memory;
 pub mod mp;
+pub mod page_allocator;
 pub mod paging;
 pub mod panic;
 pub mod psf2;

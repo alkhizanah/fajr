@@ -7,7 +7,11 @@ use core::{
 use limine::memory_map::EntryType as MemoryEntryType;
 use spin::{Lazy, Mutex};
 
-use crate::{allocators::page_allocator::PageAllocator, paging::{self, MIN_PAGE_SIZE}, requests::MEMORY_MAP_REQUEST};
+use crate::{
+    page_allocator::PageAllocator,
+    paging::{self, MIN_PAGE_SIZE},
+    requests::MEMORY_MAP_REQUEST,
+};
 
 const MAX_REGION_COUNT: usize = 128;
 
@@ -177,4 +181,3 @@ pub fn map<'a, T>(phys: usize) -> &'a T {
 
     unsafe { &*(virt as *const _) }
 }
-

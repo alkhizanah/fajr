@@ -82,7 +82,8 @@ pub struct Fadt {
     pub flags: u32,
     pub reset_reg: [u8; 12],
     pub reset_value: u8,
-    pub reserved_4: u16, pub reserved_5: u8,
+    pub reserved_4: u16,
+    pub reserved_5: u8,
 }
 
 /// Differentiated Description Table
