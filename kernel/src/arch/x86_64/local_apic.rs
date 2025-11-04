@@ -1,6 +1,6 @@
 use spin::mutex::Mutex;
 
-use crate::{memory, mp::MAX_CPU_COUNT, paging};
+use crate::{arch::interrupts::InterruptStackFrame, memory, mp::MAX_CPU_COUNT, paging};
 
 use super::{cpu::Cpu, msr::ModelSpecificRegister};
 
@@ -66,6 +66,6 @@ pub fn init() {
     local_apic.write(LocalApicRegister::TimerDiv, 16);
 }
 
-pub extern "x86-interrupt" fn handle_timer_tick() {
+pub extern "x86-interrupt" fn handle_timer_tick(_stack_frame: InterruptStackFrame) {
     LocalApic::get().write(LocalApicRegister::Eoi, 0);
 }

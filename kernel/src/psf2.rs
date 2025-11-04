@@ -25,8 +25,8 @@ pub struct Psf2Font<'a> {
     pub data: &'a [u8],
 }
 
-impl Psf2Font<'_> {
-    pub fn parse(data: &[u8]) -> Psf2Font {
+impl<'a> Psf2Font<'a> {
+    pub fn parse(data: &'a [u8]) -> Psf2Font<'a> {
         fn get_4_bytes(data: &[u8]) -> [u8; 4] {
             [data[0], data[1], data[2], data[3]]
         }
