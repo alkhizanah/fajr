@@ -1,6 +1,6 @@
 **/target
+.ccls-cache
 /kernel/kernel
-/limine
 /ovmf
 /fajr-*.iso
 /fajr-*.hdd
