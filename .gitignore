@@ -1,6 +1,11 @@
-**/target
-.ccls-cache
-/kernel/kernel
+/limine
+/limine-protocol
 /ovmf
-/fajr-*.iso
-/fajr-*.hdd
+/nob
+/nob.old
+/kernel/kernel
+/iso_root
+/*.iso
+/*.hdd
+/.ccls-cache
+/.ccls
