@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
     nob_cc_flags(&cmd);
 
     if (!only_ccls) {
-        nob_cc_inputs(&cmd, "kernel/src/one.c");
+        nob_cc_inputs(&cmd, "kernel/src/main.c", "kernel/src/mem.c");
         nob_cc_output(&cmd, "kernel/kernel");
     }
 
