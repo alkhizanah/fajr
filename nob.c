@@ -18,7 +18,7 @@ Nob_Cmd cmd = {0};
 int main(int argc, char **argv) {
     NOB_GO_REBUILD_URSELF(argc, argv);
 
-    const char *program = nob_shift(argv, argc);
+    nob_shift(argv, argc);
 
     Arch arch = x86_64;
 
@@ -73,11 +73,11 @@ int main(int argc, char **argv) {
 
                     return 1;
                 }
-            } else if (strcmp(key, "hdd")) {
+            } else if (strcmp(key, "hdd") == 0) {
                 iso = false;
-            } else if (strcmp(key, "bios")) {
+            } else if (strcmp(key, "bios") == 0) {
                 bios = true;
-            } else if (strcmp(key, "uefi")) {
+            } else if (strcmp(key, "uefi") == 0) {
                 bios = false;
             } else {
                 fprintf(stderr, "unknown key after 'with': %s\n", key);
@@ -108,10 +108,27 @@ int main(int argc, char **argv) {
         nob_cmd_run(&cmd);
     }
 
-    if (!bios) {
-        fprintf(stderr, "todo: uefi setup\n");
+    const char *ovmf_code =
+        nob_temp_sprintf("ovmf-code-%s.fd", arch_to_string(arch));
+    const char *ovmf_vars =
+        nob_temp_sprintf("ovmf-vars-%s.fd", arch_to_string(arch));
 
-        return 1;
+    if (!bios && !nob_file_exists("ovmf")) {
+        nob_mkdir_if_not_exists("ovmf");
+
+        nob_cmd_append(
+            &cmd, "curl", "-Lo", nob_temp_sprintf("ovmf/%s", ovmf_code),
+            nob_temp_sprintf("https://github.com/osdev0/edk2-ovmf-nightly/"
+                             "releases/latest/download/%s",
+                             ovmf_code));
+        nob_cmd_run(&cmd);
+
+        nob_cmd_append(
+            &cmd, "curl", "-Lo", nob_temp_sprintf("ovmf/%s", ovmf_vars),
+            nob_temp_sprintf("https://github.com/osdev0/edk2-ovmf-nightly/"
+                             "releases/latest/download/%s",
+                             ovmf_vars));
+        nob_cmd_run(&cmd);
     }
 
     char *image_name = nob_temp_sprintf("fajr-%s.%s", arch_to_string(arch),
@@ -188,40 +205,86 @@ int main(int argc, char **argv) {
                        "iso_root", "-o", image_name);
 
         nob_cmd_run(&cmd);
+    } else {
+        if (nob_file_exists(image_name)) {
+            nob_delete_file(image_name);
+        }
 
-        nob_cmd_append(&cmd, "./limine/limine", "bios-install", image_name);
+        nob_cmd_append(&cmd, "dd", "if=/dev/zero", "bs=1M", "count=0",
+                       "seek=64", nob_temp_sprintf("of=%s", image_name));
 
         nob_cmd_run(&cmd);
-    } else {
-        fprintf(stderr, "todo: hdd setup\n");
 
-        return 1;
+        nob_cmd_append(&cmd, "sgdisk", image_name, "-n", "1:2048", "-t", "1:ef00", "-m", "1");
+
+        nob_cmd_run(&cmd);
+
+        char *image_name_suffixed = nob_temp_sprintf("%s@@1M", image_name);
+
+        nob_cmd_append(&cmd, "mformat", "-i", image_name_suffixed);
+
+        nob_cmd_run(&cmd);
+
+        nob_cmd_append(&cmd, "mmd", "-i", image_name_suffixed, "::/EFI",
+                       "::/EFI/BOOT", "::/boot", "::/boot/limine");
+
+        nob_cmd_run(&cmd);
+
+        nob_cmd_append(&cmd, "mcopy", "-i", image_name_suffixed,
+                       "kernel/kernel", "::/boot");
+
+        nob_cmd_run(&cmd);
+
+        nob_cmd_append(&cmd, "mcopy", "-i", image_name_suffixed, "limine.conf",
+                       "::/boot/limine");
+
+        nob_cmd_run(&cmd);
+
+        nob_cmd_append(&cmd, "mcopy", "-i", image_name_suffixed,
+                       "limine/limine-bios.sys", "::/boot/limine");
+
+        nob_cmd_run(&cmd);
+
+        nob_cmd_append(&cmd, "mcopy", "-i", image_name_suffixed,
+                       "limine/BOOTX64.EFI", "::/EFI/BOOT");
+
+        nob_cmd_run(&cmd);
+
+        nob_cmd_append(&cmd, "mcopy", "-i", image_name_suffixed,
+                       "limine/BOOTIA32.EFI", "::/EFI/BOOT");
+
+        nob_cmd_run(&cmd);
     }
+
+    nob_cmd_append(&cmd, "./limine/limine", "bios-install", image_name);
+
+    nob_cmd_run(&cmd);
 
     if (!only_build) {
         const char *qemu_program =
             nob_temp_sprintf("qemu-system-%s", arch_to_string(arch));
 
-        if (bios) {
-            if (iso) {
-                nob_cmd_append(&cmd, qemu_program, "-m", "4G", "-M", "q35",
-                               "-cdrom", image_name, "-boot", "d");
+        nob_cmd_append(&cmd, qemu_program, "-m", "4G", "-M", "q35");
 
-                // nob_cmd_append(&cmd, "-smp", "2");
+        if (!bios) {
+            nob_cmd_append(
+                &cmd, "-drive",
+                nob_temp_sprintf(
+                    "if=pflash,unit=0,format=raw,file=ovmf/%s,readonly=on",
+                    ovmf_code));
 
-                nob_cmd_run(&cmd);
-            } else {
-                nob_cmd_append(&cmd, qemu_program, "-m", "4G", "-M", "q35",
-                               "-hda", image_name, );
-
-                // nob_cmd_append(&cmd, "-smp", "2");
-
-                nob_cmd_run(&cmd);
-            }
-        } else {
-            fprintf(stderr, "todo: uefi setup\n");
-
-            return 1;
+            nob_cmd_append(
+                &cmd, "-drive",
+                nob_temp_sprintf("if=pflash,unit=1,format=raw,file=ovmf/%s",
+                                 ovmf_vars));
+        } else if (iso) {
+            nob_cmd_append(&cmd, "-boot", "d");
         }
+
+        nob_cmd_append(&cmd, iso ? "-cdrom" : "-hda", image_name);
+
+        // nob_cmd_append(&cmd, "-smp", "2");
+
+        nob_cmd_run(&cmd);
     }
 }
