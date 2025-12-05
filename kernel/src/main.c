@@ -2,6 +2,11 @@
 
 #include <limine.h>
 
+#include "arch/arch.h"
+#include "psf2.h"
+#include "screen.h"
+#include "terminal.h"
+
 __attribute__((used,
                section(".limine_requests_start"))) static volatile uint64_t
     limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
@@ -18,27 +23,24 @@ __attribute__((
 __attribute__((used, section(".limine_requests_end"))) static volatile uint64_t
     limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
 
-static void hcf(void) {
-    for (;;) {
-#if defined(__x86_64__)
-        asm("hlt");
-#elif defined(__aarch64__) || defined(__riscv)
-        asm("wfi");
-#elif defined(__loongarch64)
-        asm("idle 0");
-#endif
-    }
-}
+const uint8_t default_font_data[] = {
+#embed "fonts/default8x16.psfu"
+};
 
-void init_bsp(void) {
+void _start(void) {
     if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision)) {
-        hcf();
+        for (;;) {
+            wait_for_interrupts();
+        }
     }
 
-    if (framebuffer_request.response == NULL ||
-        framebuffer_request.response->framebuffer_count < 1) {
-        hcf();
-    }
+    screen_init(framebuffer_request);
 
-    hcf();
+    terminal_set_font(psf2_parse(default_font_data));
+
+    terminal_set_foreground((Color){255, 255, 255, 0});
+
+    for (;;) {
+        wait_for_interrupts();
+    }
 }

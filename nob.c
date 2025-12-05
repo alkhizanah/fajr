@@ -134,17 +134,17 @@ int main(int argc, char **argv) {
     char *image_name = nob_temp_sprintf("fajr-%s.%s", arch_to_string(arch),
                                         iso ? "iso" : "hdd");
 
-    nob_cmd_append(&cmd, "clang");
+    nob_cmd_append(&cmd, "clang", "-std=gnu23");
 
     nob_cc_flags(&cmd);
 
     if (!only_ccls) {
-        nob_cc_inputs(&cmd, "kernel/src/main.c", "kernel/src/mem.c");
+        nob_cc_inputs(&cmd, "kernel/src/main.c", "kernel/src/memory.c", "kernel/src/terminal.c", "kernel/src/screen.c", "kernel/src/psf2.c");
         nob_cc_output(&cmd, "kernel/kernel");
     }
 
     nob_cmd_append(&cmd, "-ffreestanding", "-Ilimine-protocol/include",
-                   "-nostdlib", "-fno-PIC", "-fno-lto", "-fno-stack-protector",
+                   "-nostdlib", "-fPIE", "-fno-lto", "-fno-stack-protector",
                    "-fno-stack-check", "-ffunction-sections",
                    "-fdata-sections");
 
@@ -156,6 +156,10 @@ int main(int argc, char **argv) {
                        "-mcmodel=kernel");
 
         nob_cmd_append(&cmd, "-Tkernel/src/arch/x86_64/linker.ld");
+
+        if (!only_ccls) {
+            nob_cc_inputs(&cmd, "kernel/src/arch/x86_64/interrupts.c");
+        }
 
         break;
     }
