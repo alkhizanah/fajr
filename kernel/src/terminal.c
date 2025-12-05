@@ -1,3 +1,4 @@
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -110,4 +111,62 @@ void terminal_puts(const char *s) {
     while (*s != 0) {
         terminal_putc(*s++);
     }
+}
+
+void terminal_puti(long long v) {
+    if (v < 0) {
+        terminal_putc('-');
+        v = -v;
+    } else if (v == 0) {
+        terminal_putc('0');
+        return;
+    }
+
+    long long div = 1;
+
+    while (v / div >= 10) {
+        div *= 10;
+    }
+
+    while (div > 0) {
+        terminal_putc('0' + (v / div));
+
+        v %= div;
+
+        div /= 10;
+    }
+}
+
+void kprintf(const char *format, ...) {
+    va_list args;
+
+    va_start(args, format);
+
+    for (; *format != 0; format++) {
+        if (*format == '%') {
+            format++;
+
+            switch (*format) {
+            case 'd':
+                terminal_puti(va_arg(args, int));
+                break;
+            case 's':
+                terminal_puts(va_arg(args, char *));
+                break;
+            case 'c':
+                terminal_putc(va_arg(args, int));
+                break;
+            case '%':
+                terminal_putc('%');
+                break;
+            default:
+                terminal_putc('?');
+                break;
+            }
+        } else {
+            terminal_putc(*format);
+        }
+    }
+
+    va_end(args);
 }
