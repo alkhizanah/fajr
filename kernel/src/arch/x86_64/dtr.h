@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-typedef struct __attribute__((packed)) {
+typedef struct [[gnu::packed]] {
     uint16_t limit;
     uint64_t base;
 } DescriptorTableRegister;
