@@ -6,6 +6,17 @@
 #include "screen.h"
 #include "terminal.h"
 
+#define NANOPRINTF_IMPLEMENTATION
+#define NANOPRINTF_VISIBILITY_STATIC
+#define NANOPRINTF_USE_FIELD_WIDTH_FORMAT_SPECIFIERS 1
+#define NANOPRINTF_USE_PRECISION_FORMAT_SPECIFIERS 1
+#define NANOPRINTF_USE_LARGE_FORMAT_SPECIFIERS 1
+#define NANOPRINTF_USE_SMALL_FORMAT_SPECIFIERS 1
+#define NANOPRINTF_USE_FLOAT_FORMAT_SPECIFIERS 0
+#define NANOPRINTF_USE_BINARY_FORMAT_SPECIFIERS 1
+#define NANOPRINTF_USE_WRITEBACK_FORMAT_SPECIFIERS 1
+#include "nanoprintf.h"
+
 typedef struct {
     Psf2Font font;
     Color background;
@@ -113,28 +124,9 @@ void terminal_puts(const char *s) {
     }
 }
 
-void terminal_puti(long long v) {
-    if (v < 0) {
-        terminal_putc('-');
-        v = -v;
-    } else if (v == 0) {
-        terminal_putc('0');
-        return;
-    }
-
-    long long div = 1;
-
-    while (v / div >= 10) {
-        div *= 10;
-    }
-
-    while (div > 0) {
-        terminal_putc('0' + (v / div));
-
-        v %= div;
-
-        div /= 10;
-    }
+void terminal_npf_putc(int c, void *ctx) {
+    (void)ctx;
+    terminal_putc(c);
 }
 
 void kprintf(const char *format, ...) {
@@ -142,31 +134,7 @@ void kprintf(const char *format, ...) {
 
     va_start(args, format);
 
-    for (; *format != 0; format++) {
-        if (*format == '%') {
-            format++;
-
-            switch (*format) {
-            case 'd':
-                terminal_puti(va_arg(args, int));
-                break;
-            case 's':
-                terminal_puts(va_arg(args, char *));
-                break;
-            case 'c':
-                terminal_putc(va_arg(args, int));
-                break;
-            case '%':
-                terminal_putc('%');
-                break;
-            default:
-                terminal_putc('?');
-                break;
-            }
-        } else {
-            terminal_putc(*format);
-        }
-    }
+    npf_vpprintf(&terminal_npf_putc, NULL, format, args);
 
     va_end(args);
 }

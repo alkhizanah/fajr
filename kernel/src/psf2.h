@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 typedef struct {
-    uint8_t  magic[4];
+    uint8_t magic[4];
     uint32_t version;
     uint32_t header_size;
     uint32_t flags;
