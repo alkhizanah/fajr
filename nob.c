@@ -162,6 +162,7 @@ int main(int argc, char **argv) {
         if (!only_ccls) {
             nob_cc_inputs(&cmd, "kernel/src/arch/x86_64/interrupts.c",
                           "kernel/src/arch/x86_64/gdt.c",
+                          "kernel/src/arch/x86_64/idt.c",
                           "kernel/src/arch/x86_64/arch.c");
         }
 
