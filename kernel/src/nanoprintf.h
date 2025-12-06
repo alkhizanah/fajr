@@ -1,21 +1,8 @@
 /* nanoprintf v0.5.5: a tiny embeddable printf replacement written in C.
-   https://github.com/charlesnicholson/nanoprintf */
-
-/*
-  Copyright (C) 2019 by Charles Nicholson
-  <charles.nicholson+nanoprintf@gmail.com>
-
-  Permission to use, copy, modify, and/or distribute this software for
-  any purpose with or without fee is hereby granted.
-
-  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-*/
+   https://github.com/charlesnicholson/nanoprintf
+   charles.nicholson+nanoprintf@gmail.com
+   dual-licensed under 0bsd and unlicense, take your pick. see eof for details.
+ */
 
 #ifndef NPF_H_INCLUDED
 #define NPF_H_INCLUDED
