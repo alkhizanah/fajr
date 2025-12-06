@@ -139,9 +139,8 @@ int main(int argc, char **argv) {
     nob_cc_flags(&cmd);
 
     if (!only_ccls) {
-        nob_cc_inputs(&cmd, "kernel/src/main.c", "kernel/src/memory.c",
-                      "kernel/src/terminal.c", "kernel/src/screen.c",
-                      "kernel/src/psf2.c");
+        nob_cc_inputs(&cmd, "kernel/src/main.c", "kernel/src/terminal.c",
+                      "kernel/src/screen.c", "kernel/src/psf2.c");
         nob_cc_output(&cmd, "kernel/kernel");
     }
 
