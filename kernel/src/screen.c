@@ -2,7 +2,7 @@
 
 #include <limine.h>
 
-#include "arch/arch.h"
+#include "arch.h"
 #include "screen.h"
 
 static struct limine_framebuffer *framebuffer;

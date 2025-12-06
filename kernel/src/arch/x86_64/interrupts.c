@@ -1,4 +1,4 @@
-#include "../arch.h"
+#include "../../arch.h"
 
 void interrupts_disable(void) {
     asm("cli"); // Clear Interrupts Flag

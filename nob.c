@@ -139,7 +139,9 @@ int main(int argc, char **argv) {
     nob_cc_flags(&cmd);
 
     if (!only_ccls) {
-        nob_cc_inputs(&cmd, "kernel/src/main.c", "kernel/src/memory.c", "kernel/src/terminal.c", "kernel/src/screen.c", "kernel/src/psf2.c");
+        nob_cc_inputs(&cmd, "kernel/src/main.c", "kernel/src/memory.c",
+                      "kernel/src/terminal.c", "kernel/src/screen.c",
+                      "kernel/src/psf2.c");
         nob_cc_output(&cmd, "kernel/kernel");
     }
 
@@ -158,7 +160,9 @@ int main(int argc, char **argv) {
         nob_cmd_append(&cmd, "-Tkernel/src/arch/x86_64/linker.ld");
 
         if (!only_ccls) {
-            nob_cc_inputs(&cmd, "kernel/src/arch/x86_64/interrupts.c");
+            nob_cc_inputs(&cmd, "kernel/src/arch/x86_64/interrupts.c",
+                          "kernel/src/arch/x86_64/gdt.c",
+                          "kernel/src/arch/x86_64/arch.c");
         }
 
         break;
@@ -219,7 +223,8 @@ int main(int argc, char **argv) {
 
         nob_cmd_run(&cmd);
 
-        nob_cmd_append(&cmd, "sgdisk", image_name, "-n", "1:2048", "-t", "1:ef00", "-m", "1");
+        nob_cmd_append(&cmd, "sgdisk", image_name, "-n", "1:2048", "-t",
+                       "1:ef00", "-m", "1");
 
         nob_cmd_run(&cmd);
 

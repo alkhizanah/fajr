@@ -2,7 +2,7 @@
 
 #include <limine.h>
 
-#include "arch/arch.h"
+#include "arch.h"
 #include "psf2.h"
 #include "screen.h"
 #include "terminal.h"
@@ -39,6 +39,8 @@ void _start(void) {
     terminal_set_font(psf2_parse(default_font_data));
 
     terminal_set_foreground((Color){255, 255, 255, 0});
+
+    arch_init_bsp();
 
     for (;;) {
         wait_for_interrupts();
