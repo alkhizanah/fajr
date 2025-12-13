@@ -34,7 +34,7 @@ void _start(void) {
         }
     }
 
-    screen_init(framebuffer_request);
+    screen_init(framebuffer_request.response);
 
     terminal_set_font(psf2_parse(default_font_data));
 
